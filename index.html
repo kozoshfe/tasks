@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f7f4ee" />
+    <title>Трекер завдань</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icons/icon.svg" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="content" id="tasksPanel" aria-labelledby="tasksTab">
+        <div class="section-heading">
+          <h2>Таски</h2>
+          <span id="taskCount">0</span>
+        </div>
+        <ul class="task-list" id="taskList"></ul>
+      </section>
+
+      <section class="content" id="trashPanel" aria-labelledby="trashTab" hidden>
+        <div class="section-heading">
+          <h2>Корзина</h2>
+          <span id="trashCount">0</span>
+        </div>
+        <ul class="task-list" id="trashList"></ul>
+      </section>
+    </main>
+
+    <button class="install-button" id="installButton" type="button" hidden>Встановити</button>
+    <button class="floating-add-button" id="addButton" type="button" aria-label="Додати завдання" title="Додати завдання">
+      <span aria-hidden="true">+</span>
+    </button>
+
+    <div class="modal-backdrop" id="taskModal" role="dialog" aria-modal="true" aria-labelledby="taskModalTitle" hidden>
+      <section class="composer modal-card" aria-label="Додати нове завдання">
+        <div class="modal-heading">
+          <h2 id="taskModalTitle">Нове завдання</h2>
+          <button class="modal-close-button" id="closeTaskModalButton" type="button" aria-label="Закрити">×</button>
+        </div>
+        <label class="input-label" for="taskInput">Що потрібно зробити?</label>
+        <div class="input-row">
+          <input id="taskInput" type="text" placeholder="Наприклад: купити каву" autocomplete="off" />
+          <button class="icon-button mic-button" id="micButton" type="button" aria-label="Диктувати завдання" title="Диктувати завдання">
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z" />
+              <path d="M19 11a7 7 0 0 1-14 0" />
+              <path d="M12 18v3" />
+              <path d="M8 21h8" />
+            </svg>
+          </button>
+        </div>
+        <p class="voice-status" id="voiceStatus" role="status" aria-live="polite"></p>
+        <button class="modal-submit-button" id="submitTaskButton" type="button">Додати таску</button>
+      </section>
+    </div>
+
+    <nav class="bottom-tabs" aria-label="Головна навігація">
+      <button class="tab-button active" id="tasksTab" type="button" aria-controls="tasksPanel" aria-selected="true">
+        <span class="tab-icon" aria-hidden="true">✓</span>
+        <span>Таски</span>
+      </button>
+      <button class="tab-button" id="trashTab" type="button" aria-controls="trashPanel" aria-selected="false">
+        <span class="tab-icon" aria-hidden="true">⌫</span>
+        <span>Корзина</span>
+      </button>
+    </nav>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="app.js" defer></script>
+  </body>
+</html>
