@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#184e77" />
     <title>Трекер завдань</title>
-    <link rel="manifest" href="manifest.json?v=30" />
+    <link rel="manifest" href="manifest.json?v=33" />
     <link rel="icon" href="icon-512.png?v=27" />
     <link rel="apple-touch-icon" href="icon-192.png?v=27" />
-    <link rel="stylesheet" href="styles.css?v=30" />
+    <link rel="stylesheet" href="styles.css?v=33" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Таски" />
@@ -32,10 +32,6 @@
         <ul class="task-list" id="trashList"></ul>
       </section>
     </main>
-
-    <button class="floating-add-button" id="addButton" type="button" aria-label="Додати завдання" title="Додати завдання">
-      <span aria-hidden="true">+</span>
-    </button>
 
     <div class="modal-backdrop" id="taskModal" role="dialog" aria-modal="true" aria-labelledby="taskModalTitle" hidden>
       <section class="composer modal-card" aria-label="Додати нове завдання">
@@ -65,7 +61,7 @@
         <span class="tab-icon" aria-hidden="true">✓</span>
         <span>Таски</span>
       </button>
-      <button class="nav-mic-button" id="navMicButton" type="button" aria-label="Додати голосом" title="Додати голосом">
+      <button class="nav-mic-button" id="navMicButton" type="button" aria-label="Додати голосом. Утримуйте 3 секунди для ручного вводу" title="Додати голосом. Утримуйте 3 секунди для ручного вводу">
         <svg aria-hidden="true" viewBox="0 0 24 24">
           <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z" />
           <path d="M19 11a7 7 0 0 1-14 0" />
@@ -80,6 +76,6 @@
     </nav>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=30" defer></script>
+    <script src="app.js?v=33" defer></script>
   </body>
 </html>

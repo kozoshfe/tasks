@@ -225,11 +225,19 @@ input:focus {
 }
 
 .section-heading {
+  position: sticky;
+  top: calc(14px + env(safe-area-inset-top));
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 10px;
+  margin: -12px -12px 10px;
+  padding: 18px 20px 12px;
+  background: rgba(255, 255, 255, 0.86);
+  border-radius: 20px 20px 14px 14px;
+  box-shadow: 0 10px 24px rgba(37, 32, 27, 0.08);
+  backdrop-filter: blur(18px);
 }
 
 .section-heading span {
@@ -493,6 +501,11 @@ input:focus {
 .nav-mic-button.listening {
   background: var(--accent);
   box-shadow: 0 12px 26px rgba(255, 122, 89, 0.36);
+}
+
+.nav-mic-button.long-pressing {
+  background: var(--brand);
+  box-shadow: 0 12px 28px rgba(16, 24, 40, 0.36);
 }
 
 .nav-mic-button svg {

@@ -4,8 +4,9 @@ const SUPABASE_TABLE = "tasks_state";
 const SUPABASE_ROW_ID = "simple-task-pwa-main";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "30";
+const APP_VERSION = "33";
 const APP_VERSION_KEY = "simple-task-pwa-version";
+const MANUAL_ADD_HOLD_MS = 3000;
 const PRIORITIES = {
   high: {
     label: "Високий",
@@ -52,6 +53,8 @@ let realtimeChannel = null;
 let recognition = null;
 let shouldAutoAddVoiceResult = false;
 let dragState = null;
+let navMicHoldTimer = null;
+let navMicLongPressFired = false;
 let priorityPickerTaskId = null;
 const state = {
   tasks: [],
@@ -264,10 +267,17 @@ function formatDate(value) {
   }).format(new Date(value));
 }
 
+function formatTaskTitle(title) {
+  const cleanTitle = title.trim();
+  if (!cleanTitle) return "";
+
+  return cleanTitle.charAt(0).toLocaleUpperCase("uk-UA") + cleanTitle.slice(1);
+}
+
 function createTask(title) {
   return {
     id: crypto.randomUUID(),
-    title: title.trim(),
+    title: formatTaskTitle(title),
     done: false,
     createdAt: Date.now(),
     priority: null,
@@ -322,6 +332,30 @@ function startVoiceInput({ autoAdd = false } = {}) {
 
 function addVoiceTask() {
   startVoiceInput({ autoAdd: true });
+}
+
+function cancelNavMicHold() {
+  window.clearTimeout(navMicHoldTimer);
+  navMicHoldTimer = null;
+  els.navMicButton.classList.remove("long-pressing");
+}
+
+function startNavMicHold(event) {
+  if (event.button !== undefined && event.button !== 0) return;
+
+  navMicLongPressFired = false;
+  cancelNavMicHold();
+  els.navMicButton.classList.add("long-pressing");
+  els.navMicButton.setPointerCapture?.(event.pointerId);
+  navMicHoldTimer = window.setTimeout(() => {
+    navMicLongPressFired = true;
+    cancelNavMicHold();
+    openTaskModal();
+  }, MANUAL_ADD_HOLD_MS);
+}
+
+function finishNavMicHold() {
+  cancelNavMicHold();
 }
 
 function closeTaskModal() {
@@ -607,7 +641,6 @@ function setupSpeechRecognition() {
   if (!SpeechRecognition) {
     els.voiceStatus.textContent = "Голосове введення недоступне в цьому браузері.";
     els.micButton.disabled = true;
-    els.navMicButton.disabled = true;
     return;
   }
 
@@ -651,7 +684,7 @@ function setupSpeechRecognition() {
   });
 }
 
-els.addButton.addEventListener("click", openTaskModal);
+els.addButton?.addEventListener("click", openTaskModal);
 els.submitTaskButton.addEventListener("click", addTask);
 els.closeTaskModalButton.addEventListener("click", closeTaskModal);
 els.taskModal.addEventListener("click", (event) => {
@@ -674,7 +707,20 @@ document.addEventListener("click", (event) => {
 
 els.tasksTab.addEventListener("click", () => switchTab("tasks"));
 els.trashTab.addEventListener("click", () => switchTab("trash"));
-els.navMicButton.addEventListener("click", addVoiceTask);
+els.navMicButton.addEventListener("pointerdown", startNavMicHold);
+els.navMicButton.addEventListener("pointerup", finishNavMicHold);
+els.navMicButton.addEventListener("pointercancel", finishNavMicHold);
+els.navMicButton.addEventListener("pointerleave", finishNavMicHold);
+els.navMicButton.addEventListener("contextmenu", (event) => event.preventDefault());
+els.navMicButton.addEventListener("click", (event) => {
+  if (navMicLongPressFired) {
+    event.preventDefault();
+    navMicLongPressFired = false;
+    return;
+  }
+
+  addVoiceTask();
+});
 
 els.micButton.addEventListener("click", () => startVoiceInput());
 
