@@ -4,7 +4,7 @@ const SUPABASE_TABLE = "tasks_state";
 const SUPABASE_ROW_ID = "simple-task-pwa-main";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "34";
+const APP_VERSION = "35";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -49,7 +49,6 @@ const els = {
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let supabaseClient = null;
-let realtimeChannel = null;
 let recognition = null;
 let shouldAutoAddVoiceResult = false;
 let dragState = null;
@@ -147,6 +146,23 @@ function setSyncStatus() {
   // Sync messages stay silent in the UI.
 }
 
+function getSupabaseHeaders(extra = {}) {
+  return {
+    apikey: SUPABASE_ANON_KEY,
+    Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    ...extra,
+  };
+}
+
+async function parseSupabaseError(response) {
+  try {
+    const body = await response.json();
+    return body.message || body.error || response.statusText;
+  } catch {
+    return response.statusText;
+  }
+}
+
 async function saveState() {
   localStorage.setItem(PENDING_STORAGE_KEY, JSON.stringify(getStateSnapshot()));
   setSyncStatus("Зберігаю...", "neutral");
@@ -157,20 +173,31 @@ async function saveState() {
     return false;
   }
 
-  const { error } = await supabaseClient
-    .from(SUPABASE_TABLE)
-    .upsert(
-      {
+  let response = null;
+
+  try {
+    response = await fetch(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?on_conflict=id`, {
+      method: "POST",
+      headers: getSupabaseHeaders({
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates,return=minimal",
+      }),
+      body: JSON.stringify({
         id: SUPABASE_ROW_ID,
         state: getStateSnapshot(),
         updated_at: new Date().toISOString(),
-      },
-      { onConflict: "id" },
-    );
-
-  if (error) {
+      }),
+    });
+  } catch (error) {
     console.error("Failed to save tasks to Supabase:", error);
-    setSyncStatus(`Не збережено в базу: ${error.message}`, "error");
+    setSyncStatus("Не збережено в базу: немає з'єднання", "error");
+    return false;
+  }
+
+  if (!response.ok) {
+    const message = await parseSupabaseError(response);
+    console.error("Failed to save tasks to Supabase:", message);
+    setSyncStatus(`Не збережено в базу: ${message}`, "error");
     return false;
   }
 
@@ -184,18 +211,22 @@ async function loadState() {
   if (!supabaseClient) return;
   setSyncStatus("Читаю базу...", "neutral");
 
-  const { data, error } = await supabaseClient
-    .from(SUPABASE_TABLE)
-    .select("state")
-    .eq("id", SUPABASE_ROW_ID)
-    .maybeSingle();
-
   const legacyState = readLegacyState();
   const pendingState = readPendingState();
+  let data = null;
 
-  if (error) {
+  let response = null;
+
+  try {
+    response = await fetch(
+      `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(SUPABASE_ROW_ID)}&select=state`,
+      {
+        headers: getSupabaseHeaders(),
+      },
+    );
+  } catch (error) {
     console.error("Failed to load tasks from Supabase:", error);
-    setSyncStatus(`Не прочитано з бази: ${error.message}`, "error");
+    setSyncStatus("Не прочитано з бази: немає з'єднання", "error");
     if (hasTasks(pendingState)) {
       applyState(pendingState);
     } else if (hasTasks(legacyState)) {
@@ -204,6 +235,21 @@ async function loadState() {
     render();
     return;
   }
+
+  if (!response.ok) {
+    const message = await parseSupabaseError(response);
+    console.error("Failed to load tasks from Supabase:", message);
+    setSyncStatus(`Не прочитано з бази: ${message}`, "error");
+    if (hasTasks(pendingState)) {
+      applyState(pendingState);
+    } else if (hasTasks(legacyState)) {
+      applyState(legacyState);
+    }
+    render();
+    return;
+  }
+
+  data = (await response.json())[0] || null;
 
   if (hasTasks(pendingState)) {
     applyState(pendingState);
@@ -222,39 +268,9 @@ async function loadState() {
   if (!hasTasks(readPendingState())) setSyncStatus("База підключена", "success");
 }
 
-function subscribeRealtime() {
-  if (!supabaseClient || realtimeChannel) return;
-
-  realtimeChannel = supabaseClient
-    .channel("tasks-state")
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: SUPABASE_TABLE,
-        filter: `id=eq.${SUPABASE_ROW_ID}`,
-      },
-      (payload) => {
-        if (!payload.new?.state) return;
-        applyState(payload.new.state);
-        render();
-      },
-    )
-    .subscribe();
-}
-
 async function initDatabase() {
-  if (!window.supabase?.createClient) {
-    console.error("Supabase library is not loaded.");
-    setSyncStatus("Supabase бібліотека не завантажилась", "error");
-    render();
-    return;
-  }
-
-  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  supabaseClient = true;
   await loadState();
-  subscribeRealtime();
 }
 
 function formatDate(value) {
