@@ -8,7 +8,7 @@
     <link rel="manifest" href="manifest.json?v=36" />
     <link rel="icon" href="icon-512.png?v=27" />
     <link rel="apple-touch-icon" href="icon-192.png?v=27" />
-    <link rel="stylesheet" href="styles.css?v=36" />
+    <link rel="stylesheet" href="styles.css?v=39" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Таски" />
@@ -30,7 +30,10 @@
 
       <section class="content" id="trashPanel" aria-labelledby="trashTab" hidden>
         <div class="section-heading">
-          <h2>Корзина</h2>
+          <div class="trash-heading-title">
+            <h2>Корзина</h2>
+            <button class="theme-toggle" id="themeToggle" type="button" aria-label="Увімкнути темну тему" title="Увімкнути темну тему">☾</button>
+          </div>
           <span id="trashCount">0</span>
         </div>
         <ul class="task-list" id="trashList"></ul>
@@ -79,6 +82,6 @@
       </button>
     </nav>
 
-    <script src="app.js?v=37" defer></script>
+    <script src="app.js?v=39" defer></script>
   </body>
 </html>

@@ -4,8 +4,9 @@ const SUPABASE_TABLE = "tasks_state";
 const SUPABASE_ROW_ID = "simple-task-pwa-main";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "37";
+const APP_VERSION = "39";
 const APP_VERSION_KEY = "simple-task-pwa-version";
+const THEME_STORAGE_KEY = "simple-task-pwa-theme";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
   high: {
@@ -39,6 +40,7 @@ const els = {
   taskModal: document.querySelector("#taskModal"),
   taskList: document.querySelector("#taskList"),
   taskFilterTabs: document.querySelectorAll("[data-task-filter]"),
+  themeToggle: document.querySelector("#themeToggle"),
   tasksPanel: document.querySelector("#tasksPanel"),
   tasksTab: document.querySelector("#tasksTab"),
   trashCount: document.querySelector("#trashCount"),
@@ -60,6 +62,24 @@ const state = {
   tasks: [],
   trash: [],
 };
+
+function applyTheme(theme) {
+  const isDark = theme === "dark";
+  document.documentElement.dataset.theme = isDark ? "dark" : "light";
+  document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+  document.querySelector("meta[name='theme-color']")?.setAttribute("content", isDark ? "#061229" : "#184e77");
+
+  if (!els.themeToggle) return;
+  els.themeToggle.textContent = isDark ? "☀" : "☾";
+  els.themeToggle.setAttribute("aria-label", isDark ? "Увімкнути світлу тему" : "Увімкнути темну тему");
+  els.themeToggle.title = isDark ? "Увімкнути світлу тему" : "Увімкнути темну тему";
+}
+
+function toggleTheme() {
+  const nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+  applyTheme(nextTheme);
+}
 
 function ensureAppVersion() {
   const savedVersion = localStorage.getItem(APP_VERSION_KEY);
@@ -750,6 +770,7 @@ els.trashTab.addEventListener("click", () => switchTab("trash"));
 els.taskFilterTabs.forEach((tab) => {
   tab.addEventListener("click", () => setTaskFilter(tab.dataset.taskFilter));
 });
+els.themeToggle?.addEventListener("click", toggleTheme);
 els.navMicButton.addEventListener("contextmenu", (event) => event.preventDefault());
 els.navMicButton.addEventListener("click", handleNavMicTap);
 
@@ -763,6 +784,7 @@ if ("serviceWorker" in navigator) {
   });
 }
 
+applyTheme(localStorage.getItem(THEME_STORAGE_KEY) || "light");
 setupSpeechRecognition();
 render();
 if (ensureAppVersion()) initDatabase();
