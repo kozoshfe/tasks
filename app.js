@@ -4,7 +4,7 @@ const SUPABASE_TABLE = "tasks_state";
 const SUPABASE_ROW_ID = "simple-task-pwa-main";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "36";
+const APP_VERSION = "37";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -112,14 +112,22 @@ function sortActiveTasks() {
 
 function getFilteredTasks() {
   if (activeTaskFilter === "urgent") {
-    return state.tasks.filter((task) => task.priority === "high");
+    return state.tasks.filter(isUrgentTask);
   }
 
   if (activeTaskFilter === "buy") {
-    return state.tasks.filter((task) => task.title.toLocaleLowerCase("uk-UA").includes("купити"));
+    return state.tasks.filter(isBuyTask);
   }
 
-  return state.tasks;
+  return state.tasks.filter((task) => !isUrgentTask(task) && !isBuyTask(task));
+}
+
+function isUrgentTask(task) {
+  return task.priority === "high";
+}
+
+function isBuyTask(task) {
+  return task.title.toLocaleLowerCase("uk-UA").includes("купити");
 }
 
 function applyState(nextState) {
