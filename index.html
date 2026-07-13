@@ -5,10 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#f7f4ee" />
     <title>Трекер завдань</title>
-    <link rel="manifest" href="manifest.webmanifest" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="manifest" href="manifest.webmanifest?v=20" />
+    <link rel="stylesheet" href="styles.css?v=20" />
     <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="icons/icon.svg" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Таски" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   </head>
   <body>
     <main class="app-shell">
@@ -30,9 +34,20 @@
     </main>
 
     <button class="install-button" id="installButton" type="button" hidden>Встановити</button>
+    <div class="sync-status" id="syncStatus" role="status" aria-live="polite">Підключаю базу...</div>
     <button class="floating-add-button" id="addButton" type="button" aria-label="Додати завдання" title="Додати завдання">
       <span aria-hidden="true">+</span>
     </button>
+
+    <div class="modal-backdrop" id="installModal" role="dialog" aria-modal="true" aria-labelledby="installModalTitle" hidden>
+      <section class="composer modal-card install-card" aria-label="Встановити застосунок">
+        <div class="modal-heading">
+          <h2 id="installModalTitle">Встановити Таски</h2>
+          <button class="modal-close-button" id="closeInstallModalButton" type="button" aria-label="Закрити">×</button>
+        </div>
+        <p class="install-help">В Safari натисни “Поділитися”, потім “На початковий екран”. Ярлик буде як у звичайного PWA-додатку.</p>
+      </section>
+    </div>
 
     <div class="modal-backdrop" id="taskModal" role="dialog" aria-modal="true" aria-labelledby="taskModalTitle" hidden>
       <section class="composer modal-card" aria-label="Додати нове завдання">
@@ -62,6 +77,14 @@
         <span class="tab-icon" aria-hidden="true">✓</span>
         <span>Таски</span>
       </button>
+      <button class="nav-mic-button" id="navMicButton" type="button" aria-label="Додати голосом" title="Додати голосом">
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z" />
+          <path d="M19 11a7 7 0 0 1-14 0" />
+          <path d="M12 18v3" />
+          <path d="M8 21h8" />
+        </svg>
+      </button>
       <button class="tab-button" id="trashTab" type="button" aria-controls="trashPanel" aria-selected="false">
         <span class="tab-icon" aria-hidden="true">⌫</span>
         <span>Корзина</span>
@@ -69,6 +92,6 @@
     </nav>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js" defer></script>
+    <script src="app.js?v=20" defer></script>
   </body>
 </html>

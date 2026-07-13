@@ -3,13 +3,18 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks_state";
 const SUPABASE_ROW_ID = "simple-task-pwa-main";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
+const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
 
 const els = {
   addButton: document.querySelector("#addButton"),
+  closeInstallModalButton: document.querySelector("#closeInstallModalButton"),
   closeTaskModalButton: document.querySelector("#closeTaskModalButton"),
+  installModal: document.querySelector("#installModal"),
   installButton: document.querySelector("#installButton"),
   micButton: document.querySelector("#micButton"),
+  navMicButton: document.querySelector("#navMicButton"),
   submitTaskButton: document.querySelector("#submitTaskButton"),
+  syncStatus: document.querySelector("#syncStatus"),
   taskCount: document.querySelector("#taskCount"),
   taskInput: document.querySelector("#taskInput"),
   taskModal: document.querySelector("#taskModal"),
@@ -28,6 +33,9 @@ let supabaseClient = null;
 let realtimeChannel = null;
 let installPrompt = null;
 let recognition = null;
+let shouldAutoAddVoiceResult = false;
+const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone;
+const isAppleTouchDevice = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
 
 const state = {
   tasks: [],
@@ -55,6 +63,18 @@ function readLegacyState() {
   }
 }
 
+function readPendingState() {
+  try {
+    return normalizeState(JSON.parse(localStorage.getItem(PENDING_STORAGE_KEY)));
+  } catch {
+    return { tasks: [], trash: [] };
+  }
+}
+
+function hasTasks(value) {
+  return value.tasks.length > 0 || value.trash.length > 0;
+}
+
 function getStateSnapshot() {
   return {
     tasks: state.tasks,
@@ -62,9 +82,18 @@ function getStateSnapshot() {
   };
 }
 
+function setSyncStatus(message, type = "neutral") {
+  els.syncStatus.textContent = message;
+  els.syncStatus.dataset.type = type;
+}
+
 async function saveState() {
+  localStorage.setItem(PENDING_STORAGE_KEY, JSON.stringify(getStateSnapshot()));
+  setSyncStatus("Зберігаю...", "neutral");
+
   if (!supabaseClient) {
     console.error("Supabase client is not ready.");
+    setSyncStatus("Не підключено до бази. Збережено тимчасово.", "error");
     return false;
   }
 
@@ -81,15 +110,19 @@ async function saveState() {
 
   if (error) {
     console.error("Failed to save tasks to Supabase:", error);
+    setSyncStatus(`Не збережено в базу: ${error.message}`, "error");
     return false;
   }
 
   localStorage.removeItem(LEGACY_STORAGE_KEY);
+  localStorage.removeItem(PENDING_STORAGE_KEY);
+  setSyncStatus("Збережено в базу", "success");
   return true;
 }
 
 async function loadState() {
   if (!supabaseClient) return;
+  setSyncStatus("Читаю базу...", "neutral");
 
   const { data, error } = await supabaseClient
     .from(SUPABASE_TABLE)
@@ -97,18 +130,28 @@ async function loadState() {
     .eq("id", SUPABASE_ROW_ID)
     .maybeSingle();
 
+  const legacyState = readLegacyState();
+  const pendingState = readPendingState();
+
   if (error) {
     console.error("Failed to load tasks from Supabase:", error);
+    setSyncStatus(`Не прочитано з бази: ${error.message}`, "error");
+    if (hasTasks(pendingState)) {
+      applyState(pendingState);
+    } else if (hasTasks(legacyState)) {
+      applyState(legacyState);
+    }
+    render();
     return;
   }
 
-  const legacyState = readLegacyState();
-  const hasLegacyState = legacyState.tasks.length > 0 || legacyState.trash.length > 0;
-
-  if (data?.state) {
+  if (hasTasks(pendingState)) {
+    applyState(pendingState);
+    await saveState();
+  } else if (data?.state) {
     applyState(data.state);
     localStorage.removeItem(LEGACY_STORAGE_KEY);
-  } else if (hasLegacyState) {
+  } else if (hasTasks(legacyState)) {
     applyState(legacyState);
     await saveState();
   } else {
@@ -116,6 +159,7 @@ async function loadState() {
   }
 
   render();
+  if (!hasTasks(readPendingState())) setSyncStatus("База підключена", "success");
 }
 
 function subscribeRealtime() {
@@ -143,6 +187,7 @@ function subscribeRealtime() {
 async function initDatabase() {
   if (!window.supabase?.createClient) {
     console.error("Supabase library is not loaded.");
+    setSyncStatus("Supabase бібліотека не завантажилась", "error");
     render();
     return;
   }
@@ -184,6 +229,15 @@ async function addTask() {
   await saveState();
 }
 
+async function addTaskFromTitle(title) {
+  const cleanTitle = title.trim();
+  if (!cleanTitle) return;
+
+  state.tasks.unshift(createTask(cleanTitle));
+  render();
+  await saveState();
+}
+
 function openTaskModal() {
   els.taskModal.hidden = false;
   window.requestAnimationFrame(() => {
@@ -192,10 +246,39 @@ function openTaskModal() {
   });
 }
 
+function startVoiceInput({ autoAdd = false } = {}) {
+  if (!recognition) {
+    els.voiceStatus.textContent = "Голосове введення недоступне в цьому браузері.";
+    return;
+  }
+
+  shouldAutoAddVoiceResult = autoAdd;
+
+  try {
+    recognition.start();
+  } catch {
+    els.voiceStatus.textContent = "Мікрофон уже слухає.";
+  }
+}
+
+function addVoiceTask() {
+  startVoiceInput({ autoAdd: true });
+}
+
 function closeTaskModal() {
   els.taskModal.classList.remove("open");
   els.taskModal.hidden = true;
   els.voiceStatus.textContent = "";
+}
+
+function openInstallModal() {
+  els.installModal.hidden = false;
+  window.requestAnimationFrame(() => els.installModal.classList.add("open"));
+}
+
+function closeInstallModal() {
+  els.installModal.classList.remove("open");
+  els.installModal.hidden = true;
 }
 
 async function moveToTrash(id, { openTrash = true } = {}) {
@@ -294,6 +377,7 @@ function setupSpeechRecognition() {
   if (!SpeechRecognition) {
     els.voiceStatus.textContent = "Голосове введення недоступне в цьому браузері.";
     els.micButton.disabled = true;
+    els.navMicButton.disabled = true;
     return;
   }
 
@@ -304,22 +388,33 @@ function setupSpeechRecognition() {
 
   recognition.addEventListener("start", () => {
     els.micButton.classList.add("listening");
+    els.navMicButton.classList.add("listening");
     els.voiceStatus.textContent = "Слухаю...";
   });
 
-  recognition.addEventListener("result", (event) => {
+  recognition.addEventListener("result", async (event) => {
     const transcript = event.results[0][0].transcript.trim();
+
+    if (shouldAutoAddVoiceResult && transcript) {
+      shouldAutoAddVoiceResult = false;
+      setSyncStatus("Додаю голосову таску...", "neutral");
+      await addTaskFromTitle(transcript);
+      return;
+    }
+
     els.taskInput.value = transcript;
     els.voiceStatus.textContent = "Готово. Можна додати або відредагувати текст.";
     els.taskInput.focus();
   });
 
   recognition.addEventListener("error", () => {
+    shouldAutoAddVoiceResult = false;
     els.voiceStatus.textContent = "Не вдалося розпізнати голос. Спробуйте ще раз.";
   });
 
   recognition.addEventListener("end", () => {
     els.micButton.classList.remove("listening");
+    els.navMicButton.classList.remove("listening");
     if (els.voiceStatus.textContent === "Слухаю...") {
       els.voiceStatus.textContent = "";
     }
@@ -329,8 +424,12 @@ function setupSpeechRecognition() {
 els.addButton.addEventListener("click", openTaskModal);
 els.submitTaskButton.addEventListener("click", addTask);
 els.closeTaskModalButton.addEventListener("click", closeTaskModal);
+els.closeInstallModalButton.addEventListener("click", closeInstallModal);
 els.taskModal.addEventListener("click", (event) => {
   if (event.target === els.taskModal) closeTaskModal();
+});
+els.installModal.addEventListener("click", (event) => {
+  if (event.target === els.installModal) closeInstallModal();
 });
 els.taskInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") addTask();
@@ -338,15 +437,14 @@ els.taskInput.addEventListener("keydown", (event) => {
 
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !els.taskModal.hidden) closeTaskModal();
+  if (event.key === "Escape" && !els.installModal.hidden) closeInstallModal();
 });
 
 els.tasksTab.addEventListener("click", () => switchTab("tasks"));
 els.trashTab.addEventListener("click", () => switchTab("trash"));
+els.navMicButton.addEventListener("click", addVoiceTask);
 
-els.micButton.addEventListener("click", () => {
-  if (!recognition) return;
-  recognition.start();
-});
+els.micButton.addEventListener("click", () => startVoiceInput());
 
 window.addEventListener("beforeinstallprompt", (event) => {
   event.preventDefault();
@@ -355,12 +453,21 @@ window.addEventListener("beforeinstallprompt", (event) => {
 });
 
 els.installButton.addEventListener("click", async () => {
+  if (isAppleTouchDevice && !installPrompt) {
+    openInstallModal();
+    return;
+  }
+
   if (!installPrompt) return;
   installPrompt.prompt();
   await installPrompt.userChoice;
   installPrompt = null;
   els.installButton.hidden = true;
 });
+
+if (isAppleTouchDevice && !isStandalone) {
+  els.installButton.hidden = false;
+}
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {

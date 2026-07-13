@@ -1,4 +1,4 @@
-const CACHE_NAME = "simple-task-pwa-v15";
+const CACHE_NAME = "simple-task-pwa-v21";
 const ASSETS = [
   "./",
   "./index.html",
