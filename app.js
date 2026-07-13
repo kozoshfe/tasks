@@ -469,12 +469,9 @@ if (isAppleTouchDevice && !isStandalone) {
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker
-      .register("./sw.js", {
-        scope: "./",
-        updateViaCache: "none",
-      })
-      .then((registration) => registration.update());
+    navigator.serviceWorker.register("./service-worker.js").catch((error) => {
+      console.warn("Service worker registration failed", error);
+    });
   });
 }
 
