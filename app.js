@@ -4,7 +4,7 @@ const SUPABASE_TABLE = "tasks_state";
 const SUPABASE_ROW_ID = "simple-task-pwa-main";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "39";
+const APP_VERSION = "40";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const THEME_STORAGE_KEY = "simple-task-pwa-theme";
 const DOUBLE_TAP_DELAY_MS = 280;
@@ -67,7 +67,7 @@ function applyTheme(theme) {
   const isDark = theme === "dark";
   document.documentElement.dataset.theme = isDark ? "dark" : "light";
   document.documentElement.style.colorScheme = isDark ? "dark" : "light";
-  document.querySelector("meta[name='theme-color']")?.setAttribute("content", isDark ? "#061229" : "#184e77");
+  document.querySelector("meta[name='theme-color']")?.setAttribute("content", isDark ? "#071a1f" : "#184e77");
 
   if (!els.themeToggle) return;
   els.themeToggle.textContent = isDark ? "☀" : "☾";

@@ -27,27 +27,27 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #111214;
-  --panel: #18191c;
-  --panel-soft: rgba(24, 25, 28, 0.78);
-  --ink: #f3f6fb;
-  --muted: #a4a7ad;
-  --line: rgba(221, 229, 242, 0.12);
-  --brand: #e8eef8;
-  --brand-2: #30d79b;
-  --primary: #2367dd;
-  --primary-2: #2f86ff;
-  --accent: #ff946f;
+  --bg: #071a1f;
+  --panel: #0d252b;
+  --panel-soft: rgba(13, 37, 43, 0.78);
+  --ink: #f2fbfa;
+  --muted: #9fb8ba;
+  --line: rgba(145, 217, 214, 0.14);
+  --brand: #e8fffb;
+  --brand-2: #22d3c5;
+  --primary: #0fafa7;
+  --primary-2: #34e5d7;
+  --accent: #f6b56d;
   --danger: #ff6b5f;
-  --glass-border: rgba(105, 133, 190, 0.22);
-  --heading-bg: rgba(12, 24, 54, 0.86);
-  --input-bg: rgba(22, 36, 71, 0.74);
-  --item-bg: linear-gradient(180deg, rgba(34, 47, 86, 0.8), rgba(18, 28, 58, 0.88));
-  --item-border: rgba(116, 143, 199, 0.18);
-  --nav-bg: rgba(12, 22, 48, 0.86);
-  --soft-control: rgba(56, 75, 122, 0.42);
-  --soft-control-strong: rgba(68, 91, 148, 0.54);
-  --shadow: 0 22px 58px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(90, 120, 183, 0.08);
+  --glass-border: rgba(113, 220, 213, 0.18);
+  --heading-bg: rgba(9, 31, 37, 0.88);
+  --input-bg: rgba(18, 48, 55, 0.76);
+  --item-bg: linear-gradient(180deg, rgba(23, 58, 66, 0.82), rgba(12, 38, 45, 0.9));
+  --item-border: rgba(116, 226, 219, 0.16);
+  --nav-bg: rgba(8, 30, 36, 0.88);
+  --soft-control: rgba(39, 93, 99, 0.44);
+  --soft-control-strong: rgba(48, 121, 126, 0.55);
+  --shadow: 0 22px 58px rgba(0, 0, 0, 0.44), 0 0 0 1px rgba(73, 210, 200, 0.06);
   --soft-shadow: 0 12px 30px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
@@ -70,8 +70,8 @@ body {
 
 :root[data-theme="dark"] body {
   background:
-    radial-gradient(circle at 50% -120px, rgba(45, 93, 184, 0.28), transparent 360px),
-    linear-gradient(180deg, #061229 0%, #07142b 42%, #061126 100%);
+    radial-gradient(circle at 50% -120px, rgba(34, 211, 197, 0.18), transparent 360px),
+    linear-gradient(180deg, #061418 0%, #071a1f 48%, #041114 100%);
 }
 
 button,
