@@ -4,7 +4,7 @@ const SUPABASE_TABLE = "tasks_state";
 const SUPABASE_ROW_ID = "simple-task-pwa-main";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "35";
+const APP_VERSION = "36";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -38,6 +38,7 @@ const els = {
   taskInput: document.querySelector("#taskInput"),
   taskModal: document.querySelector("#taskModal"),
   taskList: document.querySelector("#taskList"),
+  taskFilterTabs: document.querySelectorAll("[data-task-filter]"),
   tasksPanel: document.querySelector("#tasksPanel"),
   tasksTab: document.querySelector("#tasksTab"),
   trashCount: document.querySelector("#trashCount"),
@@ -54,6 +55,7 @@ let shouldAutoAddVoiceResult = false;
 let dragState = null;
 let navMicTapTimer = null;
 let priorityPickerTaskId = null;
+let activeTaskFilter = "all";
 const state = {
   tasks: [],
   trash: [],
@@ -106,6 +108,18 @@ function sortTasksByPriority(tasks) {
 
 function sortActiveTasks() {
   state.tasks = sortTasksByPriority(state.tasks);
+}
+
+function getFilteredTasks() {
+  if (activeTaskFilter === "urgent") {
+    return state.tasks.filter((task) => task.priority === "high");
+  }
+
+  if (activeTaskFilter === "buy") {
+    return state.tasks.filter((task) => task.title.toLocaleLowerCase("uk-UA").includes("купити"));
+  }
+
+  return state.tasks;
 }
 
 function applyState(nextState) {
@@ -628,10 +642,21 @@ function makeTaskItem(task, mode) {
 
 function render() {
   sortActiveTasks();
-  els.taskList.replaceChildren(...state.tasks.map((task) => makeTaskItem(task, "tasks")));
+  const visibleTasks = getFilteredTasks();
+  els.taskList.replaceChildren(...visibleTasks.map((task) => makeTaskItem(task, "tasks")));
   els.trashList.replaceChildren(...state.trash.map((task) => makeTaskItem(task, "trash")));
-  els.taskCount.textContent = state.tasks.length;
+  els.taskCount.textContent = visibleTasks.length;
   els.trashCount.textContent = state.trash.length;
+}
+
+function setTaskFilter(filterName) {
+  activeTaskFilter = filterName;
+  els.taskFilterTabs.forEach((tab) => {
+    const isActive = tab.dataset.taskFilter === activeTaskFilter;
+    tab.classList.toggle("active", isActive);
+    tab.setAttribute("aria-selected", String(isActive));
+  });
+  render();
 }
 
 function switchTab(tabName) {
@@ -714,6 +739,9 @@ document.addEventListener("click", (event) => {
 
 els.tasksTab.addEventListener("click", () => switchTab("tasks"));
 els.trashTab.addEventListener("click", () => switchTab("trash"));
+els.taskFilterTabs.forEach((tab) => {
+  tab.addEventListener("click", () => setTaskFilter(tab.dataset.taskFilter));
+});
 els.navMicButton.addEventListener("contextmenu", (event) => event.preventDefault());
 els.navMicButton.addEventListener("click", handleNavMicTap);
 

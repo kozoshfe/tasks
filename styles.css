@@ -240,7 +240,44 @@ input:focus {
   backdrop-filter: blur(18px);
 }
 
+.task-filter-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.task-filter-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.task-filter-tab {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 12px;
+  color: var(--muted);
+  background: transparent;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 850;
+  transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.task-filter-tab:hover {
+  color: var(--brand);
+  background: rgba(16, 24, 40, 0.06);
+}
+
+.task-filter-tab.active {
+  color: #ffffff;
+  background: var(--brand);
+  box-shadow: 0 8px 18px rgba(16, 24, 40, 0.16);
+}
+
 .section-heading span {
+  flex: 0 0 auto;
   min-width: 36px;
   padding: 5px 10px;
   color: var(--brand);

@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#184e77" />
     <title>Трекер завдань</title>
-    <link rel="manifest" href="manifest.json?v=35" />
+    <link rel="manifest" href="manifest.json?v=36" />
     <link rel="icon" href="icon-512.png?v=27" />
     <link rel="apple-touch-icon" href="icon-192.png?v=27" />
-    <link rel="stylesheet" href="styles.css?v=35" />
+    <link rel="stylesheet" href="styles.css?v=36" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Таски" />
@@ -18,7 +18,11 @@
     <main class="app-shell">
       <section class="content" id="tasksPanel" aria-labelledby="tasksTab">
         <div class="section-heading">
-          <h2>Таски</h2>
+          <div class="task-filter-tabs" role="tablist" aria-label="Фільтр тасок">
+            <button class="task-filter-tab active" type="button" role="tab" data-task-filter="all" aria-selected="true">Всі</button>
+            <button class="task-filter-tab" type="button" role="tab" data-task-filter="urgent" aria-selected="false">Термінові</button>
+            <button class="task-filter-tab" type="button" role="tab" data-task-filter="buy" aria-selected="false">Купити</button>
+          </div>
           <span id="taskCount">0</span>
         </div>
         <ul class="task-list" id="taskList"></ul>
@@ -75,6 +79,6 @@
       </button>
     </nav>
 
-    <script src="app.js?v=35" defer></script>
+    <script src="app.js?v=36" defer></script>
   </body>
 </html>
