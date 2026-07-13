@@ -4,13 +4,32 @@ const SUPABASE_TABLE = "tasks_state";
 const SUPABASE_ROW_ID = "simple-task-pwa-main";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
+const APP_VERSION = "30";
+const APP_VERSION_KEY = "simple-task-pwa-version";
+const PRIORITIES = {
+  high: {
+    label: "Високий",
+    className: "priority-high",
+  },
+  medium: {
+    label: "Середній",
+    className: "priority-medium",
+  },
+  low: {
+    label: "Лоу",
+    className: "priority-low",
+  },
+};
+const PRIORITY_ORDER = {
+  high: 0,
+  medium: 1,
+  low: 2,
+  none: 3,
+};
 
 const els = {
   addButton: document.querySelector("#addButton"),
-  closeInstallModalButton: document.querySelector("#closeInstallModalButton"),
   closeTaskModalButton: document.querySelector("#closeTaskModalButton"),
-  installModal: document.querySelector("#installModal"),
-  installButton: document.querySelector("#installButton"),
   micButton: document.querySelector("#micButton"),
   navMicButton: document.querySelector("#navMicButton"),
   submitTaskButton: document.querySelector("#submitTaskButton"),
@@ -30,27 +49,67 @@ const els = {
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let supabaseClient = null;
 let realtimeChannel = null;
-let installPrompt = null;
 let recognition = null;
 let shouldAutoAddVoiceResult = false;
-const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone;
-const isAppleTouchDevice = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
-
+let dragState = null;
+let priorityPickerTaskId = null;
 const state = {
   tasks: [],
   trash: [],
 };
 
+function ensureAppVersion() {
+  const savedVersion = localStorage.getItem(APP_VERSION_KEY);
+  const currentUrl = new URL(window.location.href);
+  const currentVersionParam = currentUrl.searchParams.get("appv");
+
+  if (savedVersion !== APP_VERSION && currentVersionParam !== APP_VERSION) {
+    localStorage.setItem(APP_VERSION_KEY, APP_VERSION);
+    currentUrl.searchParams.set("appv", APP_VERSION);
+    window.location.replace(currentUrl.toString());
+    return false;
+  }
+
+  localStorage.setItem(APP_VERSION_KEY, APP_VERSION);
+  return true;
+}
+
 function normalizeState(value) {
   return {
-    tasks: Array.isArray(value?.tasks) ? value.tasks : [],
-    trash: Array.isArray(value?.trash) ? value.trash : [],
+    tasks: Array.isArray(value?.tasks) ? value.tasks.map(normalizeTask) : [],
+    trash: Array.isArray(value?.trash) ? value.trash.map(normalizeTask) : [],
   };
+}
+
+function normalizeTask(task) {
+  return {
+    ...task,
+    priority: hasPriority(task?.priority) ? task.priority : null,
+  };
+}
+
+function hasPriority(priority) {
+  return Object.prototype.hasOwnProperty.call(PRIORITIES, priority);
+}
+
+function getPriorityRank(task) {
+  return hasPriority(task?.priority) ? PRIORITY_ORDER[task.priority] : PRIORITY_ORDER.none;
+}
+
+function sortTasksByPriority(tasks) {
+  return tasks
+    .map((task, index) => ({ task, index }))
+    .sort((a, b) => getPriorityRank(a.task) - getPriorityRank(b.task) || a.index - b.index)
+    .map(({ task }) => task);
+}
+
+function sortActiveTasks() {
+  state.tasks = sortTasksByPriority(state.tasks);
 }
 
 function applyState(nextState) {
   const normalized = normalizeState(nextState);
-  state.tasks = normalized.tasks;
+  state.tasks = sortTasksByPriority(normalized.tasks);
   state.trash = normalized.trash;
 }
 
@@ -75,6 +134,7 @@ function hasTasks(value) {
 }
 
 function getStateSnapshot() {
+  sortActiveTasks();
   return {
     tasks: state.tasks,
     trash: state.trash,
@@ -210,6 +270,7 @@ function createTask(title) {
     title: title.trim(),
     done: false,
     createdAt: Date.now(),
+    priority: null,
   };
 }
 
@@ -220,7 +281,7 @@ async function addTask() {
     return;
   }
 
-  state.tasks.unshift(createTask(title));
+  state.tasks.push(createTask(title));
   els.taskInput.value = "";
   closeTaskModal();
   render();
@@ -231,7 +292,7 @@ async function addTaskFromTitle(title) {
   const cleanTitle = title.trim();
   if (!cleanTitle) return;
 
-  state.tasks.unshift(createTask(cleanTitle));
+  state.tasks.push(createTask(cleanTitle));
   render();
   await saveState();
 }
@@ -269,16 +330,6 @@ function closeTaskModal() {
   els.voiceStatus.textContent = "";
 }
 
-function openInstallModal() {
-  els.installModal.hidden = false;
-  window.requestAnimationFrame(() => els.installModal.classList.add("open"));
-}
-
-function closeInstallModal() {
-  els.installModal.classList.remove("open");
-  els.installModal.hidden = true;
-}
-
 async function moveToTrash(id, { openTrash = true } = {}) {
   const index = state.tasks.findIndex((task) => task.id === id);
   if (index === -1) return;
@@ -288,6 +339,54 @@ async function moveToTrash(id, { openTrash = true } = {}) {
   render();
   if (openTrash) switchTab("trash");
   await saveState();
+}
+
+function closePriorityPicker() {
+  const picker = document.querySelector(".priority-picker");
+  if (picker) picker.remove();
+  priorityPickerTaskId = null;
+}
+
+async function setTaskPriority(id, priority) {
+  const task = state.tasks.find((item) => item.id === id) || state.trash.find((item) => item.id === id);
+  if (!task || !hasPriority(priority)) return;
+
+  task.priority = priority;
+  closePriorityPicker();
+  sortActiveTasks();
+  render();
+  await saveState();
+}
+
+function openPriorityPicker(task, anchor) {
+  closePriorityPicker();
+  priorityPickerTaskId = task.id;
+
+  const picker = document.createElement("div");
+  picker.className = "priority-picker";
+  picker.setAttribute("role", "menu");
+
+  Object.entries(PRIORITIES).forEach(([priority, details]) => {
+    const button = document.createElement("button");
+    button.className = `priority-option ${details.className}`;
+    button.type = "button";
+    button.setAttribute("role", "menuitemradio");
+    button.setAttribute("aria-checked", String(task.priority === priority));
+    button.innerHTML = `<span class="priority-dot" aria-hidden="true"></span><span>${details.label}</span>`;
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setTaskPriority(task.id, priority);
+    });
+    picker.append(button);
+  });
+
+  document.body.append(picker);
+  const rect = anchor.getBoundingClientRect();
+  const pickerRect = picker.getBoundingClientRect();
+  const left = Math.min(Math.max(12, rect.left), window.innerWidth - pickerRect.width - 12);
+  const top = Math.min(rect.bottom + 8, window.innerHeight - pickerRect.height - 12);
+  picker.style.left = `${left}px`;
+  picker.style.top = `${top}px`;
 }
 
 async function removeForever(id) {
@@ -302,6 +401,119 @@ function completeTask(id) {
 
   task.done = true;
   moveToTrash(id, { openTrash: false });
+}
+
+function moveTaskToIndex(id, nextIndex) {
+  const currentIndex = state.tasks.findIndex((task) => task.id === id);
+  if (currentIndex === -1 || currentIndex === nextIndex) return false;
+
+  const [task] = state.tasks.splice(currentIndex, 1);
+  state.tasks.splice(nextIndex, 0, task);
+  return true;
+}
+
+function getTaskDragIndex(pointerY, draggingItem) {
+  const items = [...els.taskList.querySelectorAll(".task-item:not(.dragging)")];
+  return items.reduce((index, item) => {
+    const rect = item.getBoundingClientRect();
+    return pointerY > rect.top + rect.height / 2 ? index + 1 : index;
+  }, 0);
+}
+
+function syncDraggedTaskPosition(pointerY) {
+  if (!dragState?.active) return;
+
+  const nextIndex = getTaskDragIndex(pointerY, dragState.item);
+  if (!moveTaskToIndex(dragState.id, nextIndex)) return;
+
+  const siblings = [...els.taskList.querySelectorAll(".task-item:not(.dragging)")];
+  els.taskList.insertBefore(dragState.item, siblings[nextIndex] || null);
+  dragState.moved = true;
+}
+
+function startTaskDrag(item) {
+  if (!dragState || dragState.active) return;
+
+  dragState.active = true;
+  dragState.moved = false;
+  item.classList.remove("pressing");
+  item.classList.add("dragging");
+  document.body.classList.add("is-reordering");
+}
+
+function cancelPendingTaskDrag() {
+  if (!dragState || dragState.active) return;
+
+  clearTimeout(dragState.timer);
+  dragState.item.classList.remove("pressing");
+  dragState = null;
+}
+
+async function finishTaskDrag() {
+  if (!dragState) return;
+
+  clearTimeout(dragState.timer);
+  const { item, moved, active } = dragState;
+  item.classList.remove("pressing", "dragging");
+  document.body.classList.remove("is-reordering");
+  dragState = null;
+
+  if (active && moved) {
+    sortActiveTasks();
+    render();
+    await saveState();
+  }
+}
+
+function setupTaskReorder(item, task, mode) {
+  if (mode !== "tasks") return;
+
+  item.dataset.taskId = task.id;
+  item.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || event.target.closest("button")) return;
+
+    dragState = {
+      active: false,
+      id: task.id,
+      item,
+      moved: false,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      timer: window.setTimeout(() => startTaskDrag(item), 420),
+    };
+
+    item.classList.add("pressing");
+    item.setPointerCapture(event.pointerId);
+  });
+
+  item.addEventListener("pointermove", (event) => {
+    if (!dragState || dragState.item !== item || dragState.pointerId !== event.pointerId) return;
+
+    const moveX = Math.abs(event.clientX - dragState.startX);
+    const moveY = Math.abs(event.clientY - dragState.startY);
+    if (!dragState.active && (moveX > 8 || moveY > 8)) {
+      cancelPendingTaskDrag();
+      return;
+    }
+
+    if (!dragState.active) return;
+
+    event.preventDefault();
+    if (event.clientY < 90) window.scrollBy({ top: -12, behavior: "auto" });
+    if (event.clientY > window.innerHeight - 120) window.scrollBy({ top: 12, behavior: "auto" });
+    syncDraggedTaskPosition(event.clientY);
+  });
+
+  item.addEventListener("pointerup", (event) => {
+    if (!dragState || dragState.item !== item || dragState.pointerId !== event.pointerId) return;
+    finishTaskDrag();
+  });
+
+  item.addEventListener("pointercancel", (event) => {
+    if (!dragState || dragState.item !== item || dragState.pointerId !== event.pointerId) return;
+    finishTaskDrag();
+  });
 }
 
 function makeTaskItem(task, mode) {
@@ -322,13 +534,22 @@ function makeTaskItem(task, mode) {
   });
 
   const text = document.createElement("div");
+  text.className = "task-text";
+  const titleRow = document.createElement("div");
+  titleRow.className = "task-title-row";
+  const priority = hasPriority(task.priority) ? PRIORITIES[task.priority] : null;
+  const priorityDot = document.createElement("span");
+  priorityDot.className = `priority-dot task-priority-dot${priority ? ` ${priority.className}` : ""}`;
+  priorityDot.title = priority ? priority.label : "Без пріоритету";
+  priorityDot.setAttribute("aria-label", priority ? `Пріоритет: ${priority.label}` : "Без пріоритету");
   const title = document.createElement("div");
   title.className = "task-title";
   title.textContent = task.title;
+  titleRow.append(priorityDot, title);
   const meta = document.createElement("span");
   meta.className = "task-meta";
   meta.textContent = mode === "trash" ? `Видалено ${formatDate(task.deletedAt)}` : `Створено ${formatDate(task.createdAt)}`;
-  text.append(title, meta);
+  text.append(titleRow, meta);
 
   const actions = document.createElement("div");
   actions.className = "item-actions";
@@ -351,10 +572,21 @@ function makeTaskItem(task, mode) {
   } else {
     item.append(text, actions);
   }
+
+  item.addEventListener("click", (event) => {
+    if (event.target.closest("button") || dragState?.active) return;
+    if (event.detail === 3) {
+      event.preventDefault();
+      openPriorityPicker(task, item);
+    }
+  });
+
+  setupTaskReorder(item, task, mode);
   return item;
 }
 
 function render() {
+  sortActiveTasks();
   els.taskList.replaceChildren(...state.tasks.map((task) => makeTaskItem(task, "tasks")));
   els.trashList.replaceChildren(...state.trash.map((task) => makeTaskItem(task, "trash")));
   els.taskCount.textContent = state.tasks.length;
@@ -422,12 +654,8 @@ function setupSpeechRecognition() {
 els.addButton.addEventListener("click", openTaskModal);
 els.submitTaskButton.addEventListener("click", addTask);
 els.closeTaskModalButton.addEventListener("click", closeTaskModal);
-els.closeInstallModalButton.addEventListener("click", closeInstallModal);
 els.taskModal.addEventListener("click", (event) => {
   if (event.target === els.taskModal) closeTaskModal();
-});
-els.installModal.addEventListener("click", (event) => {
-  if (event.target === els.installModal) closeInstallModal();
 });
 els.taskInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") addTask();
@@ -435,7 +663,13 @@ els.taskInput.addEventListener("keydown", (event) => {
 
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !els.taskModal.hidden) closeTaskModal();
-  if (event.key === "Escape" && !els.installModal.hidden) closeInstallModal();
+  if (event.key === "Escape" && priorityPickerTaskId) closePriorityPicker();
+});
+
+document.addEventListener("click", (event) => {
+  if (!priorityPickerTaskId) return;
+  if (event.target.closest(".priority-picker") || event.target.closest(".task-item")) return;
+  closePriorityPicker();
 });
 
 els.tasksTab.addEventListener("click", () => switchTab("tasks"));
@@ -443,29 +677,6 @@ els.trashTab.addEventListener("click", () => switchTab("trash"));
 els.navMicButton.addEventListener("click", addVoiceTask);
 
 els.micButton.addEventListener("click", () => startVoiceInput());
-
-window.addEventListener("beforeinstallprompt", (event) => {
-  event.preventDefault();
-  installPrompt = event;
-  els.installButton.hidden = false;
-});
-
-els.installButton.addEventListener("click", async () => {
-  if (isAppleTouchDevice && !installPrompt) {
-    openInstallModal();
-    return;
-  }
-
-  if (!installPrompt) return;
-  installPrompt.prompt();
-  await installPrompt.userChoice;
-  installPrompt = null;
-  els.installButton.hidden = true;
-});
-
-if (isAppleTouchDevice && !isStandalone) {
-  els.installButton.hidden = false;
-}
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -477,4 +688,4 @@ if ("serviceWorker" in navigator) {
 
 setupSpeechRecognition();
 render();
-initDatabase();
+if (ensureAppVersion()) initDatabase();

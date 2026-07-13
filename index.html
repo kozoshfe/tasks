@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#184e77" />
     <title>Трекер завдань</title>
-    <link rel="manifest" href="manifest.json?v=25" />
-    <link rel="icon" href="icon-512.png" />
-    <link rel="apple-touch-icon" href="icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=25" />
+    <link rel="manifest" href="manifest.json?v=30" />
+    <link rel="icon" href="icon-512.png?v=27" />
+    <link rel="apple-touch-icon" href="icon-192.png?v=27" />
+    <link rel="stylesheet" href="styles.css?v=30" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Таски" />
@@ -33,20 +33,9 @@
       </section>
     </main>
 
-    <button class="install-button" id="installButton" type="button" hidden>Встановити</button>
     <button class="floating-add-button" id="addButton" type="button" aria-label="Додати завдання" title="Додати завдання">
       <span aria-hidden="true">+</span>
     </button>
-
-    <div class="modal-backdrop" id="installModal" role="dialog" aria-modal="true" aria-labelledby="installModalTitle" hidden>
-      <section class="composer modal-card install-card" aria-label="Встановити застосунок">
-        <div class="modal-heading">
-          <h2 id="installModalTitle">Встановити Таски</h2>
-          <button class="modal-close-button" id="closeInstallModalButton" type="button" aria-label="Закрити">×</button>
-        </div>
-        <p class="install-help">В Safari натисни “Поділитися”, потім “На початковий екран”. Ярлик буде як у звичайного PWA-додатку.</p>
-      </section>
-    </div>
 
     <div class="modal-backdrop" id="taskModal" role="dialog" aria-modal="true" aria-labelledby="taskModalTitle" hidden>
       <section class="composer modal-card" aria-label="Додати нове завдання">
@@ -91,6 +80,6 @@
     </nav>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=25" defer></script>
+    <script src="app.js?v=30" defer></script>
   </body>
 </html>
