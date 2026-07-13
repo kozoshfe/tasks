@@ -1,10 +1,10 @@
-const CACHE_NAME = "simple-task-pwa-v21";
+const CACHE_NAME = "simple-task-pwa-v24";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css",
-  "./app.js",
-  "./manifest.webmanifest",
+  "./styles.css?v=24",
+  "./app.js?v=24",
+  "./manifest.webmanifest?v=24",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/icon.svg",

@@ -14,7 +14,6 @@ const els = {
   micButton: document.querySelector("#micButton"),
   navMicButton: document.querySelector("#navMicButton"),
   submitTaskButton: document.querySelector("#submitTaskButton"),
-  syncStatus: document.querySelector("#syncStatus"),
   taskCount: document.querySelector("#taskCount"),
   taskInput: document.querySelector("#taskInput"),
   taskModal: document.querySelector("#taskModal"),
@@ -82,9 +81,8 @@ function getStateSnapshot() {
   };
 }
 
-function setSyncStatus(message, type = "neutral") {
-  els.syncStatus.textContent = message;
-  els.syncStatus.dataset.type = type;
+function setSyncStatus() {
+  // Sync messages stay silent in the UI.
 }
 
 async function saveState() {
@@ -471,7 +469,12 @@ if (isAppleTouchDevice && !isStandalone) {
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("sw.js").then((registration) => registration.update());
+    navigator.serviceWorker
+      .register("./sw.js", {
+        scope: "./",
+        updateViaCache: "none",
+      })
+      .then((registration) => registration.update());
   });
 }
 
