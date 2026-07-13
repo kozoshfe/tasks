@@ -503,11 +503,6 @@ input:focus {
   box-shadow: 0 12px 26px rgba(255, 122, 89, 0.36);
 }
 
-.nav-mic-button.long-pressing {
-  background: var(--brand);
-  box-shadow: 0 12px 28px rgba(16, 24, 40, 0.36);
-}
-
 .nav-mic-button svg {
   width: 25px;
   height: 25px;
