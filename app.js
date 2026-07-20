@@ -4,7 +4,7 @@ const SUPABASE_TABLE = "tasks_state";
 const SUPABASE_ROW_ID = "simple-task-pwa-main";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "62";
+const APP_VERSION = "63";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -42,6 +42,7 @@ const els = {
   newReminderYear: document.querySelector("#newReminderYear"),
   newReminderHour: document.querySelector("#newReminderHour"),
   newReminderMinute: document.querySelector("#newReminderMinute"),
+  taskRepeat: document.querySelector("#taskRepeat"),
   taskModal: document.querySelector("#taskModal"),
   taskList: document.querySelector("#taskList"),
   taskFilterTabs: document.querySelectorAll("[data-task-filter]"),
@@ -345,6 +346,7 @@ function createTask(title) {
     createdAt: Date.now(),
     priority: null,
     reminderAt: null,
+    recurrence: null,
   };
 }
 
@@ -389,9 +391,11 @@ async function addTask() {
   const parsedTitle = parseVoiceReminder(title);
   const task = createTask(parsedTitle.title);
   task.reminderAt = parsedTitle.reminderAt || getNewReminderValue();
+  task.recurrence = els.taskRepeat.value === "none" ? null : els.taskRepeat.value;
   state.tasks.push(task);
   scheduleNativeReminder(task);
   els.taskInput.value = "";
+  els.taskRepeat.value = "none";
   closeTaskModal();
   render();
   await saveState();
@@ -539,6 +543,25 @@ function closeTaskModal() {
   els.taskModal.classList.remove("open");
   els.taskModal.hidden = true;
   els.voiceStatus.textContent = "";
+}
+
+function getNextReminderAt(task) {
+  const now = new Date();
+  const next = new Date(task.reminderAt || now);
+
+  if (task.recurrence === "daily") {
+    do next.setDate(next.getDate() + 1); while (next <= now);
+  } else if (task.recurrence === "weekly-monday") {
+    do next.setDate(next.getDate() + 1); while (next.getDay() !== 1 || next <= now);
+  } else if (task.recurrence === "monthly-20") {
+    do {
+      next.setMonth(next.getMonth() + 1, 20);
+    } while (next <= now);
+  } else {
+    return null;
+  }
+
+  return next.toISOString();
 }
 
 async function moveToTrash(id, { openTrash = true } = {}) {
@@ -699,12 +722,23 @@ async function removeForever(id) {
   await saveState();
 }
 
-function completeTask(id) {
+async function completeTask(id) {
   const task = state.tasks.find((item) => item.id === id);
   if (!task) return;
 
+  const nextReminderAt = getNextReminderAt(task);
+  if (nextReminderAt) {
+    cancelNativeReminder(id);
+    task.reminderAt = nextReminderAt;
+    task.done = false;
+    scheduleNativeReminder(task);
+    render();
+    await saveState();
+    return;
+  }
+
   task.done = true;
-  moveToTrash(id, { openTrash: false });
+  await moveToTrash(id, { openTrash: false });
 }
 
 function moveTaskToIndex(id, nextIndex) {

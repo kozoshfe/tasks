@@ -63,6 +63,13 @@
           <select id="newReminderHour" aria-label="Година"></select>
           <select id="newReminderMinute" aria-label="Хвилини"></select>
         </div>
+        <label class="input-label repeat-label" for="taskRepeat">Повторювати</label>
+        <select class="repeat-select" id="taskRepeat" aria-label="Повторювати">
+          <option value="none">Не повторювати</option>
+          <option value="daily">Щодня</option>
+          <option value="weekly-monday">Щопонеділка</option>
+          <option value="monthly-20">Кожного 20 числа</option>
+        </select>
         <p class="voice-status" id="voiceStatus" role="status" aria-live="polite"></p>
         <button class="modal-submit-button" id="submitTaskButton" type="button">Додати таску</button>
       </section>
@@ -87,6 +94,6 @@
       </button>
     </nav>
 
-    <script src="app.js?v=62" defer></script>
+    <script src="app.js?v=63" defer></script>
   </body>
 </html>
