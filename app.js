@@ -4,7 +4,7 @@ const SUPABASE_TABLE = "tasks_state";
 const SUPABASE_ROW_ID = "simple-task-pwa-main";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "36";
+const APP_VERSION = "39";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -87,9 +87,12 @@ function normalizeState(value) {
 }
 
 function normalizeTask(task) {
+  const priority = task?.priority === "priority-high" ? "high"
+    : task?.priority === "priority-medium" ? "medium"
+      : task?.priority === "priority-low" ? "low" : task?.priority;
   return {
     ...task,
-    priority: hasPriority(task?.priority) ? task.priority : null,
+    priority: hasPriority(priority) ? priority : null,
   };
 }
 
@@ -118,7 +121,7 @@ function getFilteredTasks() {
   }
 
   if (activeTaskFilter === "buy") {
-    return state.tasks.filter((task) => task.title.toLocaleLowerCase("uk-UA").includes("купити"));
+    return state.tasks.filter((task) => task.title.toLocaleLowerCase("uk-UA").includes("купит"));
   }
 
   return state.tasks;
@@ -361,6 +364,12 @@ function openTaskModal() {
 }
 
 function startVoiceInput({ autoAdd = false } = {}) {
+  if (window.AndroidSpeech?.start) {
+    shouldAutoAddVoiceResult = autoAdd;
+    els.voiceStatus.textContent = "Слухаю...";
+    window.AndroidSpeech.start();
+    return;
+  }
   if (!recognition) {
     els.voiceStatus.textContent = "Голосове введення недоступне в цьому браузері.";
     return;
@@ -374,6 +383,24 @@ function startVoiceInput({ autoAdd = false } = {}) {
     els.voiceStatus.textContent = "Мікрофон уже слухає.";
   }
 }
+
+window.onAndroidSpeechResult = async (text) => {
+  const transcript = String(text || "").trim();
+  if (!transcript) return;
+  if (shouldAutoAddVoiceResult) {
+    shouldAutoAddVoiceResult = false;
+    await addTaskFromTitle(transcript);
+  } else {
+    els.taskInput.value = transcript;
+    els.taskInput.focus();
+  }
+  els.voiceStatus.textContent = "Готово.";
+};
+
+window.onAndroidSpeechError = (message) => {
+  shouldAutoAddVoiceResult = false;
+  els.voiceStatus.textContent = message || "Не вдалося розпізнати голос.";
+};
 
 function addVoiceTask() {
   startVoiceInput({ autoAdd: true });
@@ -452,15 +479,36 @@ function openPriorityPicker(task, anchor) {
     picker.append(button);
   });
 
-  const reminderInput = document.createElement("input");
-  reminderInput.className = "task-reminder-picker-input";
-  reminderInput.type = "datetime-local";
-  reminderInput.setAttribute("aria-label", "Дата і час нагадування");
-  if (task.reminderAt) {
-    const reminderDate = new Date(task.reminderAt);
-    const offset = reminderDate.getTimezoneOffset() * 60000;
-    reminderInput.value = new Date(reminderDate.getTime() - offset).toISOString().slice(0, 16);
-  }
+  const currentReminder = task.reminderAt ? new Date(task.reminderAt) : new Date(Date.now() + 3600000);
+  const pickerFields = document.createElement("div");
+  pickerFields.className = "reminder-picker-fields";
+  const makeSelect = (label, values, selected) => {
+    const wrapper = document.createElement("label");
+    wrapper.className = "reminder-field";
+    wrapper.innerHTML = `<span>${label}</span>`;
+    const select = document.createElement("select");
+    values.forEach(([value, text]) => {
+      const option = new Option(text, value, value === selected, value === selected);
+      select.append(option);
+    });
+    wrapper.append(select);
+    pickerFields.append(wrapper);
+    return select;
+  };
+  const days = Array.from({ length: 31 }, (_, index) => {
+    const value = String(index + 1).padStart(2, "0");
+    return [value, value];
+  });
+  const months = ["Січень", "Лютий", "Березень", "Квітень", "Травень", "Червень", "Липень", "Серпень", "Вересень", "Жовтень", "Листопад", "Грудень"]
+    .map((text, index) => [String(index), text]);
+  const years = Array.from({ length: 5 }, (_, index) => String(currentReminder.getFullYear() + index));
+  const hours = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"));
+  const minutes = Array.from({ length: 12 }, (_, index) => String(index * 5).padStart(2, "0"));
+  const daySelect = makeSelect("День", days, String(currentReminder.getDate()).padStart(2, "0"));
+  const monthSelect = makeSelect("Місяць", months, String(currentReminder.getMonth()));
+  const yearSelect = makeSelect("Рік", years, String(currentReminder.getFullYear()));
+  const hourSelect = makeSelect("Година", hours.map((value) => [value, value]), String(currentReminder.getHours()).padStart(2, "0"));
+  const minuteSelect = makeSelect("Хвилини", minutes.map((value) => [value, value]), String(Math.round(currentReminder.getMinutes() / 5) * 5 % 60).padStart(2, "0"));
 
   const reminderActions = document.createElement("div");
   reminderActions.className = "reminder-picker-actions";
@@ -470,7 +518,8 @@ function openPriorityPicker(task, anchor) {
   saveReminderButton.textContent = "Зберегти дату";
   saveReminderButton.addEventListener("click", async (event) => {
     event.stopPropagation();
-    task.reminderAt = reminderInput.value ? new Date(reminderInput.value).toISOString() : null;
+    const selectedDate = new Date(Number(yearSelect.value), Number(monthSelect.value), Number(daySelect.value), Number(hourSelect.value), Number(minuteSelect.value));
+    task.reminderAt = selectedDate.toISOString();
     cancelNativeReminder(task.id);
     scheduleNativeReminder(task);
     closePriorityPicker();
@@ -490,7 +539,7 @@ function openPriorityPicker(task, anchor) {
     await saveState();
   });
   reminderActions.append(saveReminderButton, clearReminderButton);
-  picker.append(reminderInput, reminderActions);
+  picker.append(pickerFields, reminderActions);
 
   document.body.append(picker);
   const rect = anchor.getBoundingClientRect();

@@ -45,7 +45,7 @@ button {
   width: min(720px, 100%);
   min-height: calc(100vh - 76px);
   margin: 0 auto;
-  padding: 14px 18px 112px;
+  padding: max(28px, env(safe-area-inset-top)) 18px 112px;
 }
 
 h2,
@@ -484,11 +484,34 @@ input:focus {
   background: rgba(16, 24, 40, 0.08);
 }
 
-.task-reminder-picker-input {
-  min-height: 42px;
-  padding: 0 10px;
-  border-radius: 12px;
-  font-size: 0.78rem;
+.reminder-picker-fields {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 4px 0 6px;
+}
+
+.reminder-field {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.reminder-field:nth-child(4) {
+  grid-column: 1 / 2;
+}
+
+.reminder-field select {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 5px;
+  color: var(--ink);
+  background: rgba(16, 24, 40, 0.06);
+  border: 0;
+  border-radius: 10px;
+  font-size: 0.75rem;
 }
 
 .reminder-picker-actions {
