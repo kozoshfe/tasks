@@ -4,7 +4,7 @@ const SUPABASE_TABLE = "tasks_state";
 const SUPABASE_ROW_ID = "simple-task-pwa-main";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "65";
+const APP_VERSION = "66";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -716,12 +716,23 @@ function openPriorityPicker(task, anchor, showReminder = false) {
   removeReminderButton.addEventListener("click", async (event) => {
     event.stopPropagation();
     task.reminderAt = null;
+    task.recurrence = null;
+    task.lastCompletedAt = null;
     cancelNativeReminder(task.id);
     closePriorityPicker();
     render();
     await saveState();
   });
-  reminderActions.append(saveReminderButton, removeReminderButton);
+  const deleteTaskButton = document.createElement("button");
+  deleteTaskButton.className = "priority-option reminder-action reminder-delete-action";
+  deleteTaskButton.type = "button";
+  deleteTaskButton.textContent = "Видалити таску";
+  deleteTaskButton.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    closePriorityPicker();
+    await moveToTrash(task.id, { openTrash: false });
+  });
+  reminderActions.append(saveReminderButton, removeReminderButton, deleteTaskButton);
   picker.append(pickerFields, reminderActions);
   }
 
