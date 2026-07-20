@@ -360,6 +360,14 @@ input:focus {
   transform: scale(0.995);
 }
 
+.task-item.swiping-left {
+  border-color: rgba(32, 166, 122, 0.46);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.88) inset,
+    0 10px 22px rgba(32, 166, 122, 0.16);
+  transform: translateX(-8px);
+}
+
 .task-item.dragging {
   z-index: 5;
   border-color: rgba(22, 213, 255, 0.55);
@@ -503,7 +511,7 @@ input:focus {
   z-index: 60;
   display: grid;
   gap: 6px;
-  min-width: 158px;
+  min-width: 220px;
   padding: 8px;
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(36, 32, 28, 0.1);
@@ -547,6 +555,25 @@ input:focus {
 .priority-option:hover,
 .priority-option[aria-checked="true"] {
   background: rgba(16, 24, 40, 0.08);
+}
+
+.priority-clear {
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.priority-clear-icon {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  color: #74808a;
+  background: rgba(116, 128, 138, 0.14);
+  border: 1px solid rgba(116, 128, 138, 0.22);
+  border-radius: 50%;
+  font-size: 0.82rem;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .reminder-picker-fields {

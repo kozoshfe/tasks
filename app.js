@@ -4,7 +4,7 @@ const SUPABASE_TABLE = "tasks_state";
 const SUPABASE_ROW_ID = "simple-task-pwa-main";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "56";
+const APP_VERSION = "60";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -39,6 +39,7 @@ const els = {
   taskReminder: document.querySelector("#taskReminder"),
   newReminderDay: document.querySelector("#newReminderDay"),
   newReminderMonth: document.querySelector("#newReminderMonth"),
+  newReminderYear: document.querySelector("#newReminderYear"),
   newReminderHour: document.querySelector("#newReminderHour"),
   newReminderMinute: document.querySelector("#newReminderMinute"),
   taskModal: document.querySelector("#taskModal"),
@@ -76,12 +77,15 @@ function setupNewReminderPicker() {
     const value = String(i + 1).padStart(2, "0"); return [value, value];
   }), String(now.getDate()).padStart(2, "0"));
   fillReminderSelect(els.newReminderMonth, ["Січень", "Лютий", "Березень", "Квітень", "Травень", "Червень", "Липень", "Серпень", "Вересень", "Жовтень", "Листопад", "Грудень"].map((text, i) => [String(i), text]), String(now.getMonth()));
+  fillReminderSelect(els.newReminderYear, Array.from({ length: 6 }, (_, i) => {
+    const year = String(now.getFullYear() + i); return [year, year];
+  }), String(now.getFullYear()));
   fillReminderSelect(els.newReminderHour, Array.from({ length: 24 }, (_, i) => { const v = String(i).padStart(2, "0"); return [v, v]; }), String(now.getHours()).padStart(2, "0"));
   fillReminderSelect(els.newReminderMinute, Array.from({ length: 12 }, (_, i) => { const v = String(i * 5).padStart(2, "0"); return [v, v]; }), String(Math.round(now.getMinutes() / 5) * 5 % 60).padStart(2, "0"));
 }
 
 function getNewReminderValue() {
-  return new Date(now.getFullYear(), Number(els.newReminderMonth.value), Number(els.newReminderDay.value), Number(els.newReminderHour.value), Number(els.newReminderMinute.value)).toISOString();
+  return new Date(Number(els.newReminderYear.value), Number(els.newReminderMonth.value), Number(els.newReminderDay.value), Number(els.newReminderHour.value), Number(els.newReminderMinute.value)).toISOString();
 }
 
 function ensureAppVersion() {
@@ -406,6 +410,64 @@ async function addTaskFromTitle(title) {
   await saveState();
 }
 
+function openTaskTitleEditor(task) {
+  const backdrop = document.createElement("div");
+  backdrop.className = "modal-backdrop title-editor-backdrop";
+  backdrop.setAttribute("role", "dialog");
+  backdrop.setAttribute("aria-modal", "true");
+  backdrop.setAttribute("aria-label", "Редагувати назву таски");
+
+  const card = document.createElement("section");
+  card.className = "composer modal-card";
+  const heading = document.createElement("div");
+  heading.className = "modal-heading";
+  heading.innerHTML = "<h2>Редагувати таску</h2>";
+  const closeButton = document.createElement("button");
+  closeButton.className = "modal-close-button";
+  closeButton.type = "button";
+  closeButton.textContent = "×";
+  closeButton.setAttribute("aria-label", "Скасувати");
+  heading.append(closeButton);
+
+  const label = document.createElement("label");
+  label.className = "input-label";
+  label.textContent = "Назва таски";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = task.title;
+  input.maxLength = 160;
+  label.append(input);
+
+  const saveButton = document.createElement("button");
+  saveButton.className = "modal-submit-button";
+  saveButton.type = "button";
+  saveButton.textContent = "Зберегти";
+  const close = () => backdrop.remove();
+  closeButton.addEventListener("click", close);
+  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) close(); });
+  const save = async () => {
+    const title = formatTaskTitle(input.value);
+    if (!title) {
+      input.focus();
+      return;
+    }
+    task.title = title;
+    close();
+    render();
+    await saveState();
+  };
+  saveButton.addEventListener("click", save);
+  input.addEventListener("keydown", (event) => { if (event.key === "Enter") save(); });
+  card.append(heading, label, saveButton);
+  backdrop.append(card);
+  document.body.append(backdrop);
+  window.requestAnimationFrame(() => {
+    backdrop.classList.add("open");
+    input.focus();
+    input.select();
+  });
+}
+
 function openTaskModal() {
   els.taskModal.hidden = false;
   window.requestAnimationFrame(() => {
@@ -545,7 +607,9 @@ function openPriorityPicker(task, anchor, showReminder = false) {
     const clearPriorityButton = document.createElement("button");
     clearPriorityButton.className = "priority-option priority-clear";
     clearPriorityButton.type = "button";
-    clearPriorityButton.textContent = "Без пріоритету";
+    clearPriorityButton.setAttribute("role", "menuitemradio");
+    clearPriorityButton.setAttribute("aria-checked", String(!task.priority));
+    clearPriorityButton.innerHTML = '<span class="priority-clear-icon" aria-hidden="true">—</span><span>Без пріоритету</span>';
     clearPriorityButton.addEventListener("click", (event) => {
       event.stopPropagation();
       setTaskPriority(task.id, null);
@@ -576,7 +640,9 @@ function openPriorityPicker(task, anchor, showReminder = false) {
   });
   const months = ["Січень", "Лютий", "Березень", "Квітень", "Травень", "Червень", "Липень", "Серпень", "Вересень", "Жовтень", "Листопад", "Грудень"]
     .map((text, index) => [String(index), text]);
-  const years = [[String(currentReminder.getFullYear()), String(currentReminder.getFullYear())]];
+  const years = Array.from({ length: 7 }, (_, index) => {
+    const year = String(new Date().getFullYear() - 1 + index); return [year, year];
+  });
   const hours = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"));
   const minutes = Array.from({ length: 12 }, (_, index) => String(index * 5).padStart(2, "0"));
   const daySelect = makeSelect("День", days, String(currentReminder.getDate()).padStart(2, "0"));
@@ -593,7 +659,7 @@ function openPriorityPicker(task, anchor, showReminder = false) {
   saveReminderButton.textContent = "Зберегти дату";
   saveReminderButton.addEventListener("click", async (event) => {
     event.stopPropagation();
-    const selectedDate = new Date(new Date().getFullYear(), Number(monthSelect.value), Number(daySelect.value), Number(hourSelect.value), Number(minuteSelect.value));
+    const selectedDate = new Date(Number(yearSelect.value), Number(monthSelect.value), Number(daySelect.value), Number(hourSelect.value), Number(minuteSelect.value));
     task.reminderAt = selectedDate.toISOString();
     cancelNativeReminder(task.id);
     scheduleNativeReminder(task);
@@ -680,7 +746,7 @@ async function finishTaskDrag() {
 
   clearTimeout(dragState.timer);
   const { item, moved, active } = dragState;
-  item.classList.remove("pressing", "dragging");
+  item.classList.remove("pressing", "dragging", "swiping-left");
   document.body.classList.remove("is-reordering");
   dragState = null;
 
@@ -722,10 +788,13 @@ function setupTaskReorder(item, task, mode) {
   item.addEventListener("pointermove", (event) => {
     if (!dragState || dragState.item !== item || dragState.pointerId !== event.pointerId) return;
 
-    const moveX = Math.abs(event.clientX - dragState.startX);
+    const deltaX = event.clientX - dragState.startX;
+    const moveX = Math.abs(deltaX);
     const moveY = Math.abs(event.clientY - dragState.startY);
     if (!dragState.active && (moveX > 8 || moveY > 8)) {
-      cancelPendingTaskDrag();
+      clearTimeout(dragState.timer);
+      item.classList.remove("pressing");
+      item.classList.toggle("swiping-left", deltaX < -44 && moveY < 34);
       return;
     }
 
@@ -739,6 +808,14 @@ function setupTaskReorder(item, task, mode) {
 
   item.addEventListener("pointerup", (event) => {
     if (!dragState || dragState.item !== item || dragState.pointerId !== event.pointerId) return;
+    const isLeftSwipe = dragState.startX - event.clientX > 64 && Math.abs(event.clientY - dragState.startY) < 34;
+    if (isLeftSwipe && !dragState.active) {
+      clearTimeout(dragState.timer);
+      item.classList.remove("pressing", "swiping-left");
+      dragState = null;
+      openTaskTitleEditor(task);
+      return;
+    }
     finishTaskDrag();
   });
 
