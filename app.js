@@ -4,9 +4,8 @@ const SUPABASE_TABLE = "tasks_state";
 const SUPABASE_ROW_ID = "simple-task-pwa-main";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "40";
+const APP_VERSION = "36";
 const APP_VERSION_KEY = "simple-task-pwa-version";
-const THEME_STORAGE_KEY = "simple-task-pwa-theme";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
   high: {
@@ -37,10 +36,10 @@ const els = {
   submitTaskButton: document.querySelector("#submitTaskButton"),
   taskCount: document.querySelector("#taskCount"),
   taskInput: document.querySelector("#taskInput"),
+  taskReminder: document.querySelector("#taskReminder"),
   taskModal: document.querySelector("#taskModal"),
   taskList: document.querySelector("#taskList"),
   taskFilterTabs: document.querySelectorAll("[data-task-filter]"),
-  themeToggle: document.querySelector("#themeToggle"),
   tasksPanel: document.querySelector("#tasksPanel"),
   tasksTab: document.querySelector("#tasksTab"),
   trashCount: document.querySelector("#trashCount"),
@@ -58,28 +57,11 @@ let dragState = null;
 let navMicTapTimer = null;
 let priorityPickerTaskId = null;
 let activeTaskFilter = "all";
+let taskTapState = { id: null, count: 0, timer: null };
 const state = {
   tasks: [],
   trash: [],
 };
-
-function applyTheme(theme) {
-  const isDark = theme === "dark";
-  document.documentElement.dataset.theme = isDark ? "dark" : "light";
-  document.documentElement.style.colorScheme = isDark ? "dark" : "light";
-  document.querySelector("meta[name='theme-color']")?.setAttribute("content", isDark ? "#071a1f" : "#184e77");
-
-  if (!els.themeToggle) return;
-  els.themeToggle.textContent = isDark ? "☀" : "☾";
-  els.themeToggle.setAttribute("aria-label", isDark ? "Увімкнути світлу тему" : "Увімкнути темну тему");
-  els.themeToggle.title = isDark ? "Увімкнути світлу тему" : "Увімкнути темну тему";
-}
-
-function toggleTheme() {
-  const nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-  localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
-  applyTheme(nextTheme);
-}
 
 function ensureAppVersion() {
   const savedVersion = localStorage.getItem(APP_VERSION_KEY);
@@ -132,22 +114,14 @@ function sortActiveTasks() {
 
 function getFilteredTasks() {
   if (activeTaskFilter === "urgent") {
-    return state.tasks.filter(isUrgentTask);
+    return state.tasks.filter((task) => task.priority === "high");
   }
 
   if (activeTaskFilter === "buy") {
-    return state.tasks.filter(isBuyTask);
+    return state.tasks.filter((task) => task.title.toLocaleLowerCase("uk-UA").includes("купити"));
   }
 
-  return state.tasks.filter((task) => !isUrgentTask(task) && !isBuyTask(task));
-}
-
-function isUrgentTask(task) {
-  return task.priority === "high";
-}
-
-function isBuyTask(task) {
-  return task.title.toLocaleLowerCase("uk-UA").includes("купити");
+  return state.tasks;
 }
 
 function applyState(nextState) {
@@ -338,7 +312,17 @@ function createTask(title) {
     done: false,
     createdAt: Date.now(),
     priority: null,
+    reminderAt: null,
   };
+}
+
+function scheduleNativeReminder(task) {
+  if (!task.reminderAt || !window.AndroidNotifications?.schedule) return;
+  window.AndroidNotifications.schedule(String(task.id), task.title, new Date(task.reminderAt).getTime());
+}
+
+function cancelNativeReminder(taskId) {
+  window.AndroidNotifications?.cancel?.(String(taskId));
 }
 
 async function addTask() {
@@ -348,8 +332,12 @@ async function addTask() {
     return;
   }
 
-  state.tasks.push(createTask(title));
+  const task = createTask(title);
+  task.reminderAt = els.taskReminder.value ? new Date(els.taskReminder.value).toISOString() : null;
+  state.tasks.push(task);
+  scheduleNativeReminder(task);
   els.taskInput.value = "";
+  els.taskReminder.value = "";
   closeTaskModal();
   render();
   await saveState();
@@ -416,6 +404,7 @@ function closeTaskModal() {
 async function moveToTrash(id, { openTrash = true } = {}) {
   const index = state.tasks.findIndex((task) => task.id === id);
   if (index === -1) return;
+  cancelNativeReminder(id);
 
   const [task] = state.tasks.splice(index, 1);
   state.trash.unshift({ ...task, deletedAt: Date.now() });
@@ -463,6 +452,46 @@ function openPriorityPicker(task, anchor) {
     picker.append(button);
   });
 
+  const reminderInput = document.createElement("input");
+  reminderInput.className = "task-reminder-picker-input";
+  reminderInput.type = "datetime-local";
+  reminderInput.setAttribute("aria-label", "Дата і час нагадування");
+  if (task.reminderAt) {
+    const reminderDate = new Date(task.reminderAt);
+    const offset = reminderDate.getTimezoneOffset() * 60000;
+    reminderInput.value = new Date(reminderDate.getTime() - offset).toISOString().slice(0, 16);
+  }
+
+  const reminderActions = document.createElement("div");
+  reminderActions.className = "reminder-picker-actions";
+  const saveReminderButton = document.createElement("button");
+  saveReminderButton.className = "priority-option reminder-action";
+  saveReminderButton.type = "button";
+  saveReminderButton.textContent = "Зберегти дату";
+  saveReminderButton.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    task.reminderAt = reminderInput.value ? new Date(reminderInput.value).toISOString() : null;
+    cancelNativeReminder(task.id);
+    scheduleNativeReminder(task);
+    closePriorityPicker();
+    render();
+    await saveState();
+  });
+  const clearReminderButton = document.createElement("button");
+  clearReminderButton.className = "priority-option reminder-action";
+  clearReminderButton.type = "button";
+  clearReminderButton.textContent = "Без нагадування";
+  clearReminderButton.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    task.reminderAt = null;
+    cancelNativeReminder(task.id);
+    closePriorityPicker();
+    render();
+    await saveState();
+  });
+  reminderActions.append(saveReminderButton, clearReminderButton);
+  picker.append(reminderInput, reminderActions);
+
   document.body.append(picker);
   const rect = anchor.getBoundingClientRect();
   const pickerRect = picker.getBoundingClientRect();
@@ -473,6 +502,7 @@ function openPriorityPicker(task, anchor) {
 }
 
 async function removeForever(id) {
+  cancelNativeReminder(id);
   state.trash = state.trash.filter((task) => task.id !== id);
   render();
   await saveState();
@@ -631,7 +661,10 @@ function makeTaskItem(task, mode) {
   titleRow.append(priorityDot, title);
   const meta = document.createElement("span");
   meta.className = "task-meta";
-  meta.textContent = mode === "trash" ? `Видалено ${formatDate(task.deletedAt)}` : `Створено ${formatDate(task.createdAt)}`;
+  const createdLabel = mode === "trash" ? `Видалено ${formatDate(task.deletedAt)}` : `Створено ${formatDate(task.createdAt)}`;
+  meta.textContent = task.reminderAt && mode !== "trash"
+    ? `${createdLabel} · Нагадати ${formatDate(task.reminderAt)}`
+    : createdLabel;
   text.append(titleRow, meta);
 
   const actions = document.createElement("div");
@@ -663,6 +696,24 @@ function makeTaskItem(task, mode) {
       openPriorityPicker(task, item);
     }
   });
+
+  item.addEventListener("touchend", (event) => {
+    if (event.target.closest("button") || dragState?.active) return;
+    if (taskTapState.id !== task.id) {
+      taskTapState = { id: task.id, count: 0, timer: null };
+    }
+    taskTapState.count += 1;
+    window.clearTimeout(taskTapState.timer);
+    taskTapState.timer = window.setTimeout(() => {
+      taskTapState = { id: null, count: 0, timer: null };
+    }, 550);
+    if (taskTapState.count === 3) {
+      event.preventDefault();
+      window.clearTimeout(taskTapState.timer);
+      taskTapState = { id: null, count: 0, timer: null };
+      openPriorityPicker(task, item);
+    }
+  }, { passive: false });
 
   setupTaskReorder(item, task, mode);
   return item;
@@ -770,7 +821,6 @@ els.trashTab.addEventListener("click", () => switchTab("trash"));
 els.taskFilterTabs.forEach((tab) => {
   tab.addEventListener("click", () => setTaskFilter(tab.dataset.taskFilter));
 });
-els.themeToggle?.addEventListener("click", toggleTheme);
 els.navMicButton.addEventListener("contextmenu", (event) => event.preventDefault());
 els.navMicButton.addEventListener("click", handleNavMicTap);
 
@@ -784,7 +834,6 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-applyTheme(localStorage.getItem(THEME_STORAGE_KEY) || "light");
 setupSpeechRecognition();
 render();
 if (ensureAppVersion()) initDatabase();
