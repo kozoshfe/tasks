@@ -4,7 +4,7 @@ const SUPABASE_TABLE = "tasks_state";
 const SUPABASE_ROW_ID = "simple-task-pwa-main";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "45";
+const APP_VERSION = "49";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -484,7 +484,7 @@ async function setTaskPriority(id, priority) {
   await saveState();
 }
 
-function openPriorityPicker(task, anchor) {
+function openPriorityPicker(task, anchor, showReminder = false) {
   closePriorityPicker();
   priorityPickerTaskId = task.id;
 
@@ -517,6 +517,7 @@ function openPriorityPicker(task, anchor) {
     picker.append(button);
   });
 
+  if (showReminder) {
   const currentReminder = task.reminderAt ? new Date(task.reminderAt) : new Date(Date.now() + 3600000);
   const pickerFields = document.createElement("div");
   pickerFields.className = "reminder-picker-fields";
@@ -564,20 +565,9 @@ function openPriorityPicker(task, anchor) {
     render();
     await saveState();
   });
-  const clearReminderButton = document.createElement("button");
-  clearReminderButton.className = "priority-option reminder-action";
-  clearReminderButton.type = "button";
-  clearReminderButton.textContent = "Без нагадування";
-  clearReminderButton.addEventListener("click", async (event) => {
-    event.stopPropagation();
-    task.reminderAt = null;
-    cancelNativeReminder(task.id);
-    closePriorityPicker();
-    render();
-    await saveState();
-  });
-  reminderActions.append(saveReminderButton, clearReminderButton);
+  reminderActions.append(saveReminderButton);
   picker.append(pickerFields, reminderActions);
+  }
 
   document.body.append(picker);
   const rect = anchor.getBoundingClientRect();
@@ -685,7 +675,7 @@ function setupTaskReorder(item, task, mode) {
         if (!dragState || dragState.item !== item || dragState.active) return;
         dragState.menuOpened = true;
         item.classList.remove("pressing");
-        openPriorityPicker(task, item);
+        openPriorityPicker(task, item, true);
       }, 560),
     };
 
@@ -797,10 +787,11 @@ function makeTaskItem(task, mode) {
 function render() {
   sortActiveTasks();
   const visibleTasks = getFilteredTasks();
+  const reminderTasks = state.tasks.filter((task) => task.reminderAt);
   els.taskList.replaceChildren(...visibleTasks.map((task) => makeTaskItem(task, "tasks")));
-  els.trashList.replaceChildren(...state.trash.map((task) => makeTaskItem(task, "trash")));
+  els.trashList.replaceChildren(...reminderTasks.map((task) => makeTaskItem(task, "tasks")));
   els.taskCount.textContent = visibleTasks.length;
-  els.trashCount.textContent = state.trash.length;
+  els.trashCount.textContent = reminderTasks.length;
 }
 
 function setTaskFilter(filterName) {
