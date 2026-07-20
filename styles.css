@@ -360,12 +360,12 @@ input:focus {
   transform: scale(0.995);
 }
 
-.task-item.swiping-left {
+.task-item.swiping {
   border-color: rgba(32, 166, 122, 0.46);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.88) inset,
     0 10px 22px rgba(32, 166, 122, 0.16);
-  transform: translateX(-8px);
+  transform: scale(0.99);
 }
 
 .task-item.dragging {
@@ -574,6 +574,15 @@ input:focus {
   font-size: 0.82rem;
   font-weight: 900;
   line-height: 1;
+}
+
+.reminder-remove-action {
+  color: #a34338;
+  background: rgba(220, 76, 62, 0.08);
+}
+
+.reminder-remove-action:hover {
+  background: rgba(220, 76, 62, 0.15);
 }
 
 .reminder-picker-fields {

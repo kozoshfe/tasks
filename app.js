@@ -4,7 +4,7 @@ const SUPABASE_TABLE = "tasks_state";
 const SUPABASE_ROW_ID = "simple-task-pwa-main";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "60";
+const APP_VERSION = "62";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -667,7 +667,19 @@ function openPriorityPicker(task, anchor, showReminder = false) {
     render();
     await saveState();
   });
-  reminderActions.append(saveReminderButton);
+  const removeReminderButton = document.createElement("button");
+  removeReminderButton.className = "priority-option reminder-action reminder-remove-action";
+  removeReminderButton.type = "button";
+  removeReminderButton.textContent = "Прибрати нагадування";
+  removeReminderButton.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    task.reminderAt = null;
+    cancelNativeReminder(task.id);
+    closePriorityPicker();
+    render();
+    await saveState();
+  });
+  reminderActions.append(saveReminderButton, removeReminderButton);
   picker.append(pickerFields, reminderActions);
   }
 
@@ -746,7 +758,7 @@ async function finishTaskDrag() {
 
   clearTimeout(dragState.timer);
   const { item, moved, active } = dragState;
-  item.classList.remove("pressing", "dragging", "swiping-left");
+  item.classList.remove("pressing", "dragging", "swiping");
   document.body.classList.remove("is-reordering");
   dragState = null;
 
@@ -794,7 +806,7 @@ function setupTaskReorder(item, task, mode) {
     if (!dragState.active && (moveX > 8 || moveY > 8)) {
       clearTimeout(dragState.timer);
       item.classList.remove("pressing");
-      item.classList.toggle("swiping-left", deltaX < -44 && moveY < 34);
+      item.classList.toggle("swiping", moveX > 44 && moveY < 34);
       return;
     }
 
@@ -808,10 +820,10 @@ function setupTaskReorder(item, task, mode) {
 
   item.addEventListener("pointerup", (event) => {
     if (!dragState || dragState.item !== item || dragState.pointerId !== event.pointerId) return;
-    const isLeftSwipe = dragState.startX - event.clientX > 64 && Math.abs(event.clientY - dragState.startY) < 34;
-    if (isLeftSwipe && !dragState.active) {
+    const isHorizontalSwipe = Math.abs(event.clientX - dragState.startX) > 64 && Math.abs(event.clientY - dragState.startY) < 34;
+    if (isHorizontalSwipe && !dragState.active) {
       clearTimeout(dragState.timer);
-      item.classList.remove("pressing", "swiping-left");
+      item.classList.remove("pressing", "swiping");
       dragState = null;
       openTaskTitleEditor(task);
       return;
