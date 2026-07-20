@@ -4,7 +4,7 @@ const SUPABASE_TABLE = "tasks_state";
 const SUPABASE_ROW_ID = "simple-task-pwa-main";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "39";
+const APP_VERSION = "45";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -37,6 +37,12 @@ const els = {
   taskCount: document.querySelector("#taskCount"),
   taskInput: document.querySelector("#taskInput"),
   taskReminder: document.querySelector("#taskReminder"),
+  newReminderDay: document.querySelector("#newReminderDay"),
+  newReminderMonth: document.querySelector("#newReminderMonth"),
+  newReminderYear: document.querySelector("#newReminderYear"),
+  newReminderHour: document.querySelector("#newReminderHour"),
+  newReminderMinute: document.querySelector("#newReminderMinute"),
+  newReminderEnabled: document.querySelector("#newReminderEnabled"),
   taskModal: document.querySelector("#taskModal"),
   taskList: document.querySelector("#taskList"),
   taskFilterTabs: document.querySelectorAll("[data-task-filter]"),
@@ -57,11 +63,29 @@ let dragState = null;
 let navMicTapTimer = null;
 let priorityPickerTaskId = null;
 let activeTaskFilter = "all";
-let taskTapState = { id: null, count: 0, timer: null };
 const state = {
   tasks: [],
   trash: [],
 };
+
+function fillReminderSelect(select, values, selected) {
+  select.replaceChildren(...values.map(([value, text]) => new Option(text, value, value === selected, value === selected)));
+}
+
+function setupNewReminderPicker() {
+  const now = new Date(Date.now() + 3600000);
+  fillReminderSelect(els.newReminderDay, Array.from({ length: 31 }, (_, i) => {
+    const value = String(i + 1).padStart(2, "0"); return [value, value];
+  }), String(now.getDate()).padStart(2, "0"));
+  fillReminderSelect(els.newReminderMonth, ["Січень", "Лютий", "Березень", "Квітень", "Травень", "Червень", "Липень", "Серпень", "Вересень", "Жовтень", "Листопад", "Грудень"].map((text, i) => [String(i), text]), String(now.getMonth()));
+  fillReminderSelect(els.newReminderYear, Array.from({ length: 5 }, (_, i) => String(now.getFullYear() + i).split().map((v) => [v, v])[0]), String(now.getFullYear()));
+  fillReminderSelect(els.newReminderHour, Array.from({ length: 24 }, (_, i) => { const v = String(i).padStart(2, "0"); return [v, v]; }), String(now.getHours()).padStart(2, "0"));
+  fillReminderSelect(els.newReminderMinute, Array.from({ length: 12 }, (_, i) => { const v = String(i * 5).padStart(2, "0"); return [v, v]; }), String(Math.round(now.getMinutes() / 5) * 5 % 60).padStart(2, "0"));
+}
+
+function getNewReminderValue() {
+  return new Date(Number(els.newReminderYear.value), Number(els.newReminderMonth.value), Number(els.newReminderDay.value), Number(els.newReminderHour.value), Number(els.newReminderMinute.value)).toISOString();
+}
 
 function ensureAppVersion() {
   const savedVersion = localStorage.getItem(APP_VERSION_KEY);
@@ -116,15 +140,18 @@ function sortActiveTasks() {
 }
 
 function getFilteredTasks() {
+  const isBuyTask = (task) => task.title.toLocaleLowerCase("uk-UA").includes("купит");
+  const isUrgentTask = (task) => task.priority === "high";
+
   if (activeTaskFilter === "urgent") {
-    return state.tasks.filter((task) => task.priority === "high");
+    return state.tasks.filter(isUrgentTask);
   }
 
   if (activeTaskFilter === "buy") {
-    return state.tasks.filter((task) => task.title.toLocaleLowerCase("uk-UA").includes("купит"));
+    return state.tasks.filter(isBuyTask);
   }
 
-  return state.tasks;
+  return state.tasks.filter((task) => !isUrgentTask(task) && !isBuyTask(task));
 }
 
 function applyState(nextState) {
@@ -336,11 +363,11 @@ async function addTask() {
   }
 
   const task = createTask(title);
-  task.reminderAt = els.taskReminder.value ? new Date(els.taskReminder.value).toISOString() : null;
+  task.reminderAt = els.newReminderEnabled.checked ? getNewReminderValue() : null;
   state.tasks.push(task);
   scheduleNativeReminder(task);
   els.taskInput.value = "";
-  els.taskReminder.value = "";
+  els.newReminderEnabled.checked = false;
   closeTaskModal();
   render();
   await saveState();
@@ -464,6 +491,17 @@ function openPriorityPicker(task, anchor) {
   const picker = document.createElement("div");
   picker.className = "priority-picker";
   picker.setAttribute("role", "menu");
+
+  const closePickerButton = document.createElement("button");
+  closePickerButton.className = "picker-close-button";
+  closePickerButton.type = "button";
+  closePickerButton.setAttribute("aria-label", "Закрити меню");
+  closePickerButton.textContent = "×";
+  closePickerButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    closePriorityPicker();
+  });
+  picker.append(closePickerButton);
 
   Object.entries(PRIORITIES).forEach(([priority, details]) => {
     const button = document.createElement("button");
@@ -639,10 +677,16 @@ function setupTaskReorder(item, task, mode) {
       id: task.id,
       item,
       moved: false,
+      menuOpened: false,
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      timer: window.setTimeout(() => startTaskDrag(item), 420),
+      timer: window.setTimeout(() => {
+        if (!dragState || dragState.item !== item || dragState.active) return;
+        dragState.menuOpened = true;
+        item.classList.remove("pressing");
+        openPriorityPicker(task, item);
+      }, 560),
     };
 
     item.classList.add("pressing");
@@ -745,24 +789,6 @@ function makeTaskItem(task, mode) {
       openPriorityPicker(task, item);
     }
   });
-
-  item.addEventListener("touchend", (event) => {
-    if (event.target.closest("button") || dragState?.active) return;
-    if (taskTapState.id !== task.id) {
-      taskTapState = { id: task.id, count: 0, timer: null };
-    }
-    taskTapState.count += 1;
-    window.clearTimeout(taskTapState.timer);
-    taskTapState.timer = window.setTimeout(() => {
-      taskTapState = { id: null, count: 0, timer: null };
-    }, 550);
-    if (taskTapState.count === 3) {
-      event.preventDefault();
-      window.clearTimeout(taskTapState.timer);
-      taskTapState = { id: null, count: 0, timer: null };
-      openPriorityPicker(task, item);
-    }
-  }, { passive: false });
 
   setupTaskReorder(item, task, mode);
   return item;
@@ -884,5 +910,6 @@ if ("serviceWorker" in navigator) {
 }
 
 setupSpeechRecognition();
+setupNewReminderPicker();
 render();
 if (ensureAppVersion()) initDatabase();
