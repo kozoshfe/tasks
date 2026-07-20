@@ -4,7 +4,7 @@ const SUPABASE_TABLE = "tasks_state";
 const SUPABASE_ROW_ID = "simple-task-pwa-main";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "49";
+const APP_VERSION = "52";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -42,7 +42,6 @@ const els = {
   newReminderYear: document.querySelector("#newReminderYear"),
   newReminderHour: document.querySelector("#newReminderHour"),
   newReminderMinute: document.querySelector("#newReminderMinute"),
-  newReminderEnabled: document.querySelector("#newReminderEnabled"),
   taskModal: document.querySelector("#taskModal"),
   taskList: document.querySelector("#taskList"),
   taskFilterTabs: document.querySelectorAll("[data-task-filter]"),
@@ -363,11 +362,10 @@ async function addTask() {
   }
 
   const task = createTask(title);
-  task.reminderAt = els.newReminderEnabled.checked ? getNewReminderValue() : null;
+  task.reminderAt = getNewReminderValue();
   state.tasks.push(task);
   scheduleNativeReminder(task);
   els.taskInput.value = "";
-  els.newReminderEnabled.checked = false;
   closeTaskModal();
   render();
   await saveState();
@@ -475,7 +473,7 @@ function closePriorityPicker() {
 
 async function setTaskPriority(id, priority) {
   const task = state.tasks.find((item) => item.id === id) || state.trash.find((item) => item.id === id);
-  if (!task || !hasPriority(priority)) return;
+  if (!task || (priority !== null && !hasPriority(priority))) return;
 
   task.priority = priority;
   closePriorityPicker();
@@ -503,7 +501,7 @@ function openPriorityPicker(task, anchor, showReminder = false) {
   });
   picker.append(closePickerButton);
 
-  Object.entries(PRIORITIES).forEach(([priority, details]) => {
+  if (!showReminder) Object.entries(PRIORITIES).forEach(([priority, details]) => {
     const button = document.createElement("button");
     button.className = `priority-option ${details.className}`;
     button.type = "button";
@@ -516,6 +514,18 @@ function openPriorityPicker(task, anchor, showReminder = false) {
     });
     picker.append(button);
   });
+
+  if (!showReminder) {
+    const clearPriorityButton = document.createElement("button");
+    clearPriorityButton.className = "priority-option priority-clear";
+    clearPriorityButton.type = "button";
+    clearPriorityButton.textContent = "Без пріоритету";
+    clearPriorityButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setTaskPriority(task.id, null);
+    });
+    picker.append(clearPriorityButton);
+  }
 
   if (showReminder) {
   const currentReminder = task.reminderAt ? new Date(task.reminderAt) : new Date(Date.now() + 3600000);
