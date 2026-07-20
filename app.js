@@ -4,7 +4,7 @@ const SUPABASE_TABLE = "tasks_state";
 const SUPABASE_ROW_ID = "simple-task-pwa-main";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "55";
+const APP_VERSION = "56";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -39,7 +39,6 @@ const els = {
   taskReminder: document.querySelector("#taskReminder"),
   newReminderDay: document.querySelector("#newReminderDay"),
   newReminderMonth: document.querySelector("#newReminderMonth"),
-  newReminderYear: document.querySelector("#newReminderYear"),
   newReminderHour: document.querySelector("#newReminderHour"),
   newReminderMinute: document.querySelector("#newReminderMinute"),
   taskModal: document.querySelector("#taskModal"),
@@ -77,13 +76,12 @@ function setupNewReminderPicker() {
     const value = String(i + 1).padStart(2, "0"); return [value, value];
   }), String(now.getDate()).padStart(2, "0"));
   fillReminderSelect(els.newReminderMonth, ["Січень", "Лютий", "Березень", "Квітень", "Травень", "Червень", "Липень", "Серпень", "Вересень", "Жовтень", "Листопад", "Грудень"].map((text, i) => [String(i), text]), String(now.getMonth()));
-  fillReminderSelect(els.newReminderYear, Array.from({ length: 5 }, (_, i) => String(now.getFullYear() + i).split().map((v) => [v, v])[0]), String(now.getFullYear()));
   fillReminderSelect(els.newReminderHour, Array.from({ length: 24 }, (_, i) => { const v = String(i).padStart(2, "0"); return [v, v]; }), String(now.getHours()).padStart(2, "0"));
   fillReminderSelect(els.newReminderMinute, Array.from({ length: 12 }, (_, i) => { const v = String(i * 5).padStart(2, "0"); return [v, v]; }), String(Math.round(now.getMinutes() / 5) * 5 % 60).padStart(2, "0"));
 }
 
 function getNewReminderValue() {
-  return new Date(Number(els.newReminderYear.value), Number(els.newReminderMonth.value), Number(els.newReminderDay.value), Number(els.newReminderHour.value), Number(els.newReminderMinute.value)).toISOString();
+  return new Date(now.getFullYear(), Number(els.newReminderMonth.value), Number(els.newReminderDay.value), Number(els.newReminderHour.value), Number(els.newReminderMinute.value)).toISOString();
 }
 
 function ensureAppVersion() {
@@ -346,6 +344,24 @@ function createTask(title) {
   };
 }
 
+function parseVoiceReminder(text) {
+  const months = {
+    січня: 0, лютого: 1, березня: 2, квітня: 3, травня: 4, червня: 5,
+    липня: 6, серпня: 7, вересня: 8, жовтня: 9, листопада: 10, грудня: 11,
+  };
+  const match = text.match(/(?:на\s+)?(\d{1,2})\s+(січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)(?:\s+(\d{4})\s*)?(?:о|в)\s+(\d{1,2})(?::|[,.])?(\d{2})?/i);
+  if (!match) return { title: text, reminderAt: null };
+
+  const now = new Date();
+  const year = Number(match[3] || now.getFullYear());
+  const hour = Number(match[4]);
+  const minute = Number(match[5] || 0);
+  const reminderDate = new Date(year, months[match[2].toLocaleLowerCase("uk-UA")], Number(match[1]), hour, minute);
+  if (!match[3] && reminderDate.getTime() < Date.now()) reminderDate.setFullYear(year + 1);
+  const title = text.replace(match[0], " ").replace(/\s+/g, " ").trim();
+  return { title: title || text, reminderAt: reminderDate.toISOString() };
+}
+
 function scheduleNativeReminder(task) {
   if (!task.reminderAt || !window.AndroidNotifications?.schedule) return;
   window.AndroidNotifications.schedule(String(task.id), task.title, new Date(task.reminderAt).getTime());
@@ -366,8 +382,9 @@ async function addTask() {
     return;
   }
 
-  const task = createTask(title);
-  task.reminderAt = getNewReminderValue();
+  const parsedTitle = parseVoiceReminder(title);
+  const task = createTask(parsedTitle.title);
+  task.reminderAt = parsedTitle.reminderAt || getNewReminderValue();
   state.tasks.push(task);
   scheduleNativeReminder(task);
   els.taskInput.value = "";
@@ -380,7 +397,11 @@ async function addTaskFromTitle(title) {
   const cleanTitle = title.trim();
   if (!cleanTitle) return;
 
-  state.tasks.push(createTask(cleanTitle));
+  const parsed = parseVoiceReminder(cleanTitle);
+  const task = createTask(parsed.title);
+  task.reminderAt = parsed.reminderAt;
+  state.tasks.push(task);
+  scheduleNativeReminder(task);
   render();
   await saveState();
 }
@@ -555,7 +576,7 @@ function openPriorityPicker(task, anchor, showReminder = false) {
   });
   const months = ["Січень", "Лютий", "Березень", "Квітень", "Травень", "Червень", "Липень", "Серпень", "Вересень", "Жовтень", "Листопад", "Грудень"]
     .map((text, index) => [String(index), text]);
-  const years = Array.from({ length: 5 }, (_, index) => String(currentReminder.getFullYear() + index));
+  const years = [[String(currentReminder.getFullYear()), String(currentReminder.getFullYear())]];
   const hours = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"));
   const minutes = Array.from({ length: 12 }, (_, index) => String(index * 5).padStart(2, "0"));
   const daySelect = makeSelect("День", days, String(currentReminder.getDate()).padStart(2, "0"));
@@ -572,7 +593,7 @@ function openPriorityPicker(task, anchor, showReminder = false) {
   saveReminderButton.textContent = "Зберегти дату";
   saveReminderButton.addEventListener("click", async (event) => {
     event.stopPropagation();
-    const selectedDate = new Date(Number(yearSelect.value), Number(monthSelect.value), Number(daySelect.value), Number(hourSelect.value), Number(minuteSelect.value));
+    const selectedDate = new Date(new Date().getFullYear(), Number(monthSelect.value), Number(daySelect.value), Number(hourSelect.value), Number(minuteSelect.value));
     task.reminderAt = selectedDate.toISOString();
     cancelNativeReminder(task.id);
     scheduleNativeReminder(task);
