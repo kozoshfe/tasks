@@ -4,7 +4,7 @@ const SUPABASE_TABLE = "tasks_state";
 const SUPABASE_ROW_ID = "simple-task-pwa-main";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "52";
+const APP_VERSION = "55";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -141,16 +141,17 @@ function sortActiveTasks() {
 function getFilteredTasks() {
   const isBuyTask = (task) => task.title.toLocaleLowerCase("uk-UA").includes("купит");
   const isUrgentTask = (task) => task.priority === "high";
+  const isReminderTask = (task) => Boolean(task.reminderAt);
 
   if (activeTaskFilter === "urgent") {
-    return state.tasks.filter(isUrgentTask);
+    return state.tasks.filter((task) => !isReminderTask(task) && isUrgentTask(task));
   }
 
   if (activeTaskFilter === "buy") {
-    return state.tasks.filter(isBuyTask);
+    return state.tasks.filter((task) => !isReminderTask(task) && isBuyTask(task));
   }
 
-  return state.tasks.filter((task) => !isUrgentTask(task) && !isBuyTask(task));
+  return state.tasks.filter((task) => !isReminderTask(task) && !isUrgentTask(task) && !isBuyTask(task));
 }
 
 function applyState(nextState) {
@@ -352,6 +353,10 @@ function scheduleNativeReminder(task) {
 
 function cancelNativeReminder(taskId) {
   window.AndroidNotifications?.cancel?.(String(taskId));
+}
+
+function rescheduleNativeReminders() {
+  state.tasks.forEach((task) => scheduleNativeReminder(task));
 }
 
 async function addTask() {
@@ -754,10 +759,14 @@ function makeTaskItem(task, mode) {
   titleRow.append(priorityDot, title);
   const meta = document.createElement("span");
   meta.className = "task-meta";
-  const createdLabel = mode === "trash" ? `Видалено ${formatDate(task.deletedAt)}` : `Створено ${formatDate(task.createdAt)}`;
-  meta.textContent = task.reminderAt && mode !== "trash"
-    ? `${createdLabel} · Нагадати ${formatDate(task.reminderAt)}`
-    : createdLabel;
+  if (task.reminderAt && mode !== "trash") {
+    meta.classList.add("task-reminder-meta");
+    meta.textContent = `Нагадати ${formatDate(task.reminderAt)}`;
+  } else if (mode === "trash") {
+    meta.textContent = `Видалено ${formatDate(task.deletedAt)}`;
+  } else {
+    meta.hidden = true;
+  }
   text.append(titleRow, meta);
 
   const actions = document.createElement("div");
@@ -802,6 +811,7 @@ function render() {
   els.trashList.replaceChildren(...reminderTasks.map((task) => makeTaskItem(task, "tasks")));
   els.taskCount.textContent = visibleTasks.length;
   els.trashCount.textContent = reminderTasks.length;
+  rescheduleNativeReminders();
 }
 
 function setTaskFilter(filterName) {

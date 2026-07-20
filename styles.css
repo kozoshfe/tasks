@@ -466,6 +466,18 @@ input:focus {
   font-weight: 500;
 }
 
+.task-reminder-meta {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 5px;
+  padding: 4px 9px;
+  color: #116149;
+  background: rgba(32, 166, 122, 0.14);
+  border: 1px solid rgba(32, 166, 122, 0.24);
+  border-radius: 999px;
+  font-weight: 850;
+}
+
 .item-actions {
   display: flex;
   gap: 6px;
