@@ -475,6 +475,13 @@ input:focus {
   border-color: var(--brand-2);
 }
 
+.check-button.completed-today {
+  color: #ffffff;
+  background: var(--brand-2);
+  border-color: var(--brand-2);
+  cursor: default;
+}
+
 .task-title {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -618,6 +625,10 @@ input:focus {
 
 .reminder-field:nth-child(4) {
   grid-column: 1 / 2;
+}
+
+.reminder-recurrence-field {
+  grid-column: 1 / -1;
 }
 
 .reminder-field select {

@@ -4,7 +4,7 @@ const SUPABASE_TABLE = "tasks_state";
 const SUPABASE_ROW_ID = "simple-task-pwa-main";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "63";
+const APP_VERSION = "65";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -564,6 +564,17 @@ function getNextReminderAt(task) {
   return next.toISOString();
 }
 
+function isSameCalendarDay(first, second = new Date()) {
+  return first.getFullYear() === second.getFullYear()
+    && first.getMonth() === second.getMonth()
+    && first.getDate() === second.getDate();
+}
+
+function isRecurringTaskCompletedToday(task) {
+  return Boolean(task.recurrence && task.lastCompletedAt
+    && isSameCalendarDay(new Date(task.lastCompletedAt)));
+}
+
 async function moveToTrash(id, { openTrash = true } = {}) {
   const index = state.tasks.findIndex((task) => task.id === id);
   if (index === -1) return;
@@ -673,6 +684,13 @@ function openPriorityPicker(task, anchor, showReminder = false) {
   const yearSelect = makeSelect("Рік", years, String(currentReminder.getFullYear()));
   const hourSelect = makeSelect("Година", hours.map((value) => [value, value]), String(currentReminder.getHours()).padStart(2, "0"));
   const minuteSelect = makeSelect("Хвилини", minutes.map((value) => [value, value]), String(Math.round(currentReminder.getMinutes() / 5) * 5 % 60).padStart(2, "0"));
+  const recurrenceSelect = makeSelect("Повторювати", [
+    ["none", "Не повторювати"],
+    ["daily", "Щодня"],
+    ["weekly-monday", "Щопонеділка"],
+    ["monthly-20", "Кожного 20 числа"],
+  ], task.recurrence || "none");
+  recurrenceSelect.closest(".reminder-field")?.classList.add("reminder-recurrence-field");
 
   const reminderActions = document.createElement("div");
   reminderActions.className = "reminder-picker-actions";
@@ -684,6 +702,7 @@ function openPriorityPicker(task, anchor, showReminder = false) {
     event.stopPropagation();
     const selectedDate = new Date(Number(yearSelect.value), Number(monthSelect.value), Number(daySelect.value), Number(hourSelect.value), Number(minuteSelect.value));
     task.reminderAt = selectedDate.toISOString();
+    task.recurrence = recurrenceSelect.value === "none" ? null : recurrenceSelect.value;
     cancelNativeReminder(task.id);
     scheduleNativeReminder(task);
     closePriorityPicker();
@@ -728,9 +747,11 @@ async function completeTask(id) {
 
   const nextReminderAt = getNextReminderAt(task);
   if (nextReminderAt) {
+    if (isRecurringTaskCompletedToday(task)) return;
     cancelNativeReminder(id);
     task.reminderAt = nextReminderAt;
     task.done = false;
+    task.lastCompletedAt = Date.now();
     scheduleNativeReminder(task);
     render();
     await saveState();
@@ -874,17 +895,20 @@ function setupTaskReorder(item, task, mode) {
 function makeTaskItem(task, mode) {
   const item = document.createElement("li");
   item.className = `task-item${task.done ? " done" : ""}`;
+  const completedToday = isRecurringTaskCompletedToday(task);
 
   const checkButton = document.createElement("button");
-  checkButton.className = "check-button";
+  checkButton.className = `check-button${completedToday ? " completed-today" : ""}`;
   checkButton.type = "button";
-  checkButton.textContent = task.done ? "✓" : "";
-  checkButton.setAttribute("aria-label", task.done ? "Позначити активним" : "Позначити виконаним");
-  checkButton.setAttribute("aria-pressed", String(task.done));
+  checkButton.textContent = task.done || completedToday ? "✓" : "";
+  checkButton.setAttribute("aria-label", completedToday ? "Виконано сьогодні" : task.done ? "Позначити активним" : "Позначити виконаним");
+  checkButton.setAttribute("aria-pressed", String(task.done || completedToday));
+  if (completedToday) checkButton.title = "Виконано сьогодні";
   checkButton.disabled = mode === "trash";
   checkButton.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
+    if (completedToday) return;
     completeTask(task.id);
   });
 
@@ -905,7 +929,9 @@ function makeTaskItem(task, mode) {
   meta.className = "task-meta";
   if (task.reminderAt && mode !== "trash") {
     meta.classList.add("task-reminder-meta");
-    meta.textContent = `Нагадати ${formatDate(task.reminderAt)}`;
+    meta.textContent = completedToday
+      ? `Виконано сьогодні · Наступне ${formatDate(task.reminderAt)}`
+      : `Нагадати ${formatDate(task.reminderAt)}`;
   } else if (mode === "trash") {
     meta.textContent = `Видалено ${formatDate(task.deletedAt)}`;
   } else {
