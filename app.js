@@ -4,7 +4,7 @@ const SUPABASE_TABLE = "tasks_state";
 const SUPABASE_ROW_ID = "simple-task-pwa-main";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "66";
+const APP_VERSION = "68";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -575,6 +575,11 @@ function isRecurringTaskCompletedToday(task) {
     && isSameCalendarDay(new Date(task.lastCompletedAt)));
 }
 
+function isRecurringTaskReadyToComplete(task) {
+  return Boolean(task.recurrence && task.reminderAt
+    && new Date(task.reminderAt).getTime() <= Date.now());
+}
+
 async function moveToTrash(id, { openTrash = true } = {}) {
   const index = state.tasks.findIndex((task) => task.id === id);
   if (index === -1) return;
@@ -756,6 +761,7 @@ async function completeTask(id) {
   const task = state.tasks.find((item) => item.id === id);
   if (!task) return;
 
+  if (task.recurrence && !isRecurringTaskReadyToComplete(task)) return;
   const nextReminderAt = getNextReminderAt(task);
   if (nextReminderAt) {
     if (isRecurringTaskCompletedToday(task)) return;
@@ -907,19 +913,21 @@ function makeTaskItem(task, mode) {
   const item = document.createElement("li");
   item.className = `task-item${task.done ? " done" : ""}`;
   const completedToday = isRecurringTaskCompletedToday(task);
+  const notReadyYet = Boolean(task.recurrence && !completedToday && !isRecurringTaskReadyToComplete(task));
 
   const checkButton = document.createElement("button");
-  checkButton.className = `check-button${completedToday ? " completed-today" : ""}`;
+  checkButton.className = `check-button${completedToday ? " completed-today" : ""}${notReadyYet ? " not-ready-yet" : ""}`;
   checkButton.type = "button";
   checkButton.textContent = task.done || completedToday ? "✓" : "";
-  checkButton.setAttribute("aria-label", completedToday ? "Виконано сьогодні" : task.done ? "Позначити активним" : "Позначити виконаним");
+  checkButton.setAttribute("aria-label", completedToday ? "Виконано сьогодні" : notReadyYet ? `Доступно після ${formatDate(task.reminderAt)}` : task.done ? "Позначити активним" : "Позначити виконаним");
   checkButton.setAttribute("aria-pressed", String(task.done || completedToday));
   if (completedToday) checkButton.title = "Виконано сьогодні";
+  if (notReadyYet) checkButton.title = `Можна відмітити після ${formatDate(task.reminderAt)}`;
   checkButton.disabled = mode === "trash";
   checkButton.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    if (completedToday) return;
+    if (completedToday || notReadyYet) return;
     completeTask(task.id);
   });
 
@@ -994,6 +1002,25 @@ function render() {
   els.trashCount.textContent = reminderTasks.length;
   rescheduleNativeReminders();
 }
+
+window.openTaskFromNotification = (taskId, attempts = 0) => {
+  const task = state.tasks.find((item) => item.id === taskId);
+  if (!task) {
+    if (attempts < 20) window.setTimeout(() => window.openTaskFromNotification(taskId, attempts + 1), 250);
+    return;
+  }
+
+  const isReminderTask = Boolean(task.reminderAt);
+  setTaskFilter("all");
+  switchTab(isReminderTask ? "trash" : "tasks");
+  const taskItem = (isReminderTask ? els.trashList : els.taskList)
+    .querySelector(`.task-item[data-task-id="${CSS.escape(taskId)}"]`);
+  if (!taskItem) return;
+
+  taskItem.scrollIntoView({ behavior: "smooth", block: "center" });
+  taskItem.classList.add("notification-target");
+  window.setTimeout(() => taskItem.classList.remove("notification-target"), 1800);
+};
 
 function setTaskFilter(filterName) {
   activeTaskFilter = filterName;
