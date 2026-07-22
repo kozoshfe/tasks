@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "73";
+const APP_VERSION = "74";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const ACCESS_STORAGE_KEY = "simple-task-pwa-access-granted";
 const ACCESS_CODE = "15057050";
@@ -854,7 +854,7 @@ function openPriorityPicker(task, anchor, showReminder = false) {
   deleteTaskButton.addEventListener("click", async (event) => {
     event.stopPropagation();
     closePriorityPicker();
-    await moveToTrash(task.id, { openTrash: false });
+    await deleteTaskPermanently(task.id);
   });
   reminderActions.append(saveReminderButton, removeReminderButton, deleteTaskButton);
   picker.append(pickerFields, reminderActions);
@@ -875,11 +875,16 @@ function openPriorityPicker(task, anchor, showReminder = false) {
   picker.style.top = `${top}px`;
 }
 
-async function removeForever(id) {
+async function deleteTaskPermanently(id) {
   cancelNativeReminder(id);
+  state.tasks = state.tasks.filter((task) => task.id !== id);
   state.trash = state.trash.filter((task) => task.id !== id);
   render();
   await saveState();
+}
+
+async function removeForever(id) {
+  await deleteTaskPermanently(id);
 }
 
 async function completeTask(id) {
