@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "71";
+const APP_VERSION = "72";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const ACCESS_STORAGE_KEY = "simple-task-pwa-access-granted";
 const ACCESS_CODE = "15057050";
@@ -359,6 +359,19 @@ async function loadState() {
     );
     if (!response.ok) throw new Error(await parseSupabaseError(response));
     rows = await response.json();
+
+    // Completed one-off tasks are not kept as history in the shared table.
+    const completedOneOffIds = rows
+      .filter((row) => row.done && !row.recurrence)
+      .map((row) => row.id);
+    if (completedOneOffIds.length) {
+      const deleteResponse = await fetch(
+        `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=in.(${completedOneOffIds.join(",")})`,
+        { method: "DELETE", headers: getSupabaseHeaders() },
+      );
+      if (!deleteResponse.ok) throw new Error(await parseSupabaseError(deleteResponse));
+      rows = rows.filter((row) => !completedOneOffIds.includes(row.id));
+    }
   } catch (error) {
     console.error("Failed to load tasks from Supabase:", error);
     setSyncStatus("Не прочитано з бази", "error");
@@ -879,8 +892,12 @@ async function completeTask(id) {
     return;
   }
 
-  task.done = true;
-  await moveToTrash(id, { openTrash: false });
+  // A completed task without recurrence has no next occurrence, so remove it
+  // completely instead of leaving a completed row in the database.
+  cancelNativeReminder(id);
+  state.tasks = state.tasks.filter((item) => item.id !== id);
+  render();
+  await saveState();
 }
 
 function moveTaskToIndex(id, nextIndex) {
