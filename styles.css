@@ -31,6 +31,89 @@ body {
   background: var(--bg);
 }
 
+.access-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: linear-gradient(145deg, #e4f4ed, var(--bg) 48%, #f8e7df);
+}
+
+.access-card {
+  width: min(100%, 380px);
+  padding: 30px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  border-radius: 24px;
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.access-lock-icon {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  margin: 0 auto 18px;
+  color: #fff;
+  background: var(--brand-2);
+  border-radius: 18px;
+  font-size: 2rem;
+  font-weight: 900;
+  transform: rotate(180deg);
+}
+
+.access-card h1 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.access-card > p {
+  margin: 10px 0 24px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.access-label {
+  display: block;
+  margin-bottom: 9px;
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-weight: 800;
+  text-align: left;
+}
+
+.access-card input {
+  text-align: center;
+  letter-spacing: 0.18em;
+}
+
+.access-error {
+  min-height: 22px;
+  margin: 8px 0 0;
+  color: var(--danger);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.access-submit {
+  width: 100%;
+  min-height: 54px;
+  margin-top: 8px;
+  color: #fff;
+  background: var(--brand);
+  border-radius: 18px;
+  font-weight: 850;
+}
+
+.access-locked .app-shell,
+.access-locked .bottom-tabs {
+  visibility: hidden;
+}
+
 button,
 input {
   font: inherit;
@@ -548,12 +631,16 @@ input:focus {
   display: grid;
   gap: 6px;
   min-width: 220px;
+  max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   padding: 8px;
+  padding-bottom: max(8px, calc(12px + env(safe-area-inset-bottom)));
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(36, 32, 28, 0.1);
   border-radius: 16px;
   box-shadow: 0 16px 36px rgba(37, 32, 27, 0.18);
   backdrop-filter: blur(18px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .picker-close-button {

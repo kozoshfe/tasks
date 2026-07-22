@@ -8,13 +8,24 @@
     <link rel="manifest" href="manifest.json?v=36" />
     <link rel="icon" href="icon-512.png?v=27" />
     <link rel="apple-touch-icon" href="icon-192.png?v=27" />
-    <link rel="stylesheet" href="styles.css?v=57" />
+    <link rel="stylesheet" href="styles.css?v=59" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Таски" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   </head>
-  <body>
+  <body class="access-locked">
+    <section class="access-screen" id="accessScreen" aria-labelledby="accessTitle">
+      <form class="access-card" id="accessForm">
+        <span class="access-lock-icon" aria-hidden="true">⌁</span>
+        <h1 id="accessTitle">Доступ до тасок</h1>
+        <p>Введіть код, щоб відкрити список завдань.</p>
+        <label class="access-label" for="accessCode">Код доступу</label>
+        <input id="accessCode" type="password" inputmode="numeric" autocomplete="one-time-code" maxlength="8" pattern="[0-9]*" placeholder="Введіть код" required />
+        <p class="access-error" id="accessError" role="alert" aria-live="polite"></p>
+        <button class="access-submit" type="submit">Відкрити</button>
+      </form>
+    </section>
     <main class="app-shell">
       <section class="content" id="tasksPanel" aria-labelledby="tasksTab">
         <div class="section-heading">
@@ -94,6 +105,6 @@
       </button>
     </nav>
 
-    <script src="app.js?v=68" defer></script>
+    <script src="app.js?v=76" defer></script>
   </body>
 </html>

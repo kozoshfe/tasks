@@ -1,11 +1,12 @@
 const SUPABASE_URL = "https://qzcapeempzzdhicsweqz.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
-const SUPABASE_TABLE = "tasks_state";
-const SUPABASE_ROW_ID = "simple-task-pwa-main";
+const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "68";
+const APP_VERSION = "70";
 const APP_VERSION_KEY = "simple-task-pwa-version";
+const ACCESS_STORAGE_KEY = "simple-task-pwa-access-granted";
+const ACCESS_CODE = "15057050";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
   high: {
@@ -53,6 +54,10 @@ const els = {
   trashPanel: document.querySelector("#trashPanel"),
   trashTab: document.querySelector("#trashTab"),
   voiceStatus: document.querySelector("#voiceStatus"),
+  accessScreen: document.querySelector("#accessScreen"),
+  accessForm: document.querySelector("#accessForm"),
+  accessCode: document.querySelector("#accessCode"),
+  accessError: document.querySelector("#accessError"),
 };
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -63,6 +68,7 @@ let dragState = null;
 let navMicTapTimer = null;
 let priorityPickerTaskId = null;
 let activeTaskFilter = "all";
+let syncedTaskIds = new Set();
 const state = {
   tasks: [],
   trash: [],
@@ -103,6 +109,34 @@ function ensureAppVersion() {
 
   localStorage.setItem(APP_VERSION_KEY, APP_VERSION);
   return true;
+}
+
+async function openApp() {
+  if (!ensureAppVersion()) return;
+  await initDatabase();
+  document.body.classList.remove("access-locked");
+  els.accessScreen.hidden = true;
+}
+
+function setupAccessGate() {
+  if (localStorage.getItem(ACCESS_STORAGE_KEY) === "true") {
+    openApp();
+    return;
+  }
+
+  els.accessForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (els.accessCode.value === ACCESS_CODE) {
+      localStorage.setItem(ACCESS_STORAGE_KEY, "true");
+      els.accessError.textContent = "";
+      openApp();
+      return;
+    }
+
+    els.accessError.textContent = "Невірний код. Спробуйте ще раз.";
+    els.accessCode.select();
+  });
+  els.accessCode.focus();
 }
 
 function normalizeState(value) {
@@ -191,6 +225,34 @@ function getStateSnapshot() {
   };
 }
 
+function toDatabaseTask(task, isDeleted) {
+  return {
+    id: task.id,
+    value: task.title,
+    done: Boolean(task.done),
+    priority: task.priority || null,
+    created_at: new Date(task.createdAt || Date.now()).toISOString(),
+    reminder_at: task.reminderAt || null,
+    recurrence: task.recurrence || null,
+    last_completed_at: task.lastCompletedAt ? new Date(task.lastCompletedAt).toISOString() : null,
+    deleted_at: isDeleted ? new Date(task.deletedAt || Date.now()).toISOString() : null,
+  };
+}
+
+function fromDatabaseTask(row) {
+  return normalizeTask({
+    id: row.id,
+    title: row.value,
+    done: row.done,
+    priority: row.priority,
+    createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+    reminderAt: row.reminder_at,
+    recurrence: row.recurrence,
+    lastCompletedAt: row.last_completed_at ? new Date(row.last_completed_at).getTime() : null,
+    deletedAt: row.deleted_at ? new Date(row.deleted_at).getTime() : null,
+  });
+}
+
 function setSyncStatus() {
   // Sync messages stay silent in the UI.
 }
@@ -222,31 +284,38 @@ async function saveState() {
     return false;
   }
 
-  let response = null;
+  const snapshot = getStateSnapshot();
+  const rows = [
+    ...snapshot.tasks.map((task) => toDatabaseTask(task, false)),
+    ...snapshot.trash.map((task) => toDatabaseTask(task, true)),
+  ];
+  const currentIds = new Set(rows.map((task) => task.id));
 
   try {
-    response = await fetch(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?on_conflict=id`, {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?on_conflict=id`, {
       method: "POST",
       headers: getSupabaseHeaders({
         "Content-Type": "application/json",
         Prefer: "resolution=merge-duplicates,return=minimal",
       }),
-      body: JSON.stringify({
-        id: SUPABASE_ROW_ID,
-        state: getStateSnapshot(),
-        updated_at: new Date().toISOString(),
-      }),
+      body: JSON.stringify(rows),
     });
+
+    if (!response.ok) throw new Error(await parseSupabaseError(response));
+
+    const removedIds = [...syncedTaskIds].filter((id) => !currentIds.has(id));
+    if (removedIds.length) {
+      const deleteResponse = await fetch(
+        `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=in.(${removedIds.join(",")})`,
+        { method: "DELETE", headers: getSupabaseHeaders() },
+      );
+      if (!deleteResponse.ok) throw new Error(await parseSupabaseError(deleteResponse));
+    }
+
+    syncedTaskIds = currentIds;
   } catch (error) {
     console.error("Failed to save tasks to Supabase:", error);
     setSyncStatus("Не збережено в базу: немає з'єднання", "error");
-    return false;
-  }
-
-  if (!response.ok) {
-    const message = await parseSupabaseError(response);
-    console.error("Failed to save tasks to Supabase:", message);
-    setSyncStatus(`Не збережено в базу: ${message}`, "error");
     return false;
   }
 
@@ -262,55 +331,45 @@ async function loadState() {
 
   const legacyState = readLegacyState();
   const pendingState = readPendingState();
-  let data = null;
-
-  let response = null;
+  let rows = null;
 
   try {
-    response = await fetch(
-      `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(SUPABASE_ROW_ID)}&select=state`,
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?select=*&order=created_at.asc`,
       {
         headers: getSupabaseHeaders(),
       },
     );
+    if (!response.ok) throw new Error(await parseSupabaseError(response));
+    rows = await response.json();
   } catch (error) {
     console.error("Failed to load tasks from Supabase:", error);
-    setSyncStatus("Не прочитано з бази: немає з'єднання", "error");
-    if (hasTasks(pendingState)) {
-      applyState(pendingState);
-    } else if (hasTasks(legacyState)) {
-      applyState(legacyState);
-    }
+    setSyncStatus("Не прочитано з бази", "error");
+    if (hasTasks(pendingState)) applyState(pendingState);
+    else if (hasTasks(legacyState)) applyState(legacyState);
     render();
     return;
   }
 
-  if (!response.ok) {
-    const message = await parseSupabaseError(response);
-    console.error("Failed to load tasks from Supabase:", message);
-    setSyncStatus(`Не прочитано з бази: ${message}`, "error");
-    if (hasTasks(pendingState)) {
-      applyState(pendingState);
-    } else if (hasTasks(legacyState)) {
-      applyState(legacyState);
-    }
-    render();
-    return;
-  }
-
-  data = (await response.json())[0] || null;
-
-  if (hasTasks(pendingState)) {
-    applyState(pendingState);
-    await saveState();
-  } else if (data?.state) {
-    applyState(data.state);
+  // The shared database is the source of truth. A stale offline copy from a
+  // different browser must never overwrite the current shared task list.
+  if (rows.length) {
+    applyState({
+      tasks: rows.filter((row) => !row.deleted_at).map(fromDatabaseTask),
+      trash: rows.filter((row) => row.deleted_at).map(fromDatabaseTask),
+    });
+    syncedTaskIds = new Set(rows.map((row) => row.id));
     localStorage.removeItem(LEGACY_STORAGE_KEY);
+    localStorage.removeItem(PENDING_STORAGE_KEY);
   } else if (hasTasks(legacyState)) {
     applyState(legacyState);
-    await saveState();
+    setSyncStatus("Локальні таски готові до збереження", "neutral");
+  } else if (hasTasks(pendingState)) {
+    applyState(pendingState);
+    setSyncStatus("Локальні таски готові до збереження", "neutral");
   } else {
-    await saveState();
+    applyState({ tasks: [], trash: [] });
+    setSyncStatus("База підключена", "success");
   }
 
   render();
@@ -318,6 +377,11 @@ async function loadState() {
 }
 
 async function initDatabase() {
+  if (window.location.protocol === "file:") {
+    setSyncStatus("Локальний файл не синхронізується з базою", "neutral");
+    return;
+  }
+
   supabaseClient = true;
   await loadState();
 }
@@ -355,10 +419,27 @@ function parseVoiceReminder(text) {
     січня: 0, лютого: 1, березня: 2, квітня: 3, травня: 4, червня: 5,
     липня: 6, серпня: 7, вересня: 8, жовтня: 9, листопада: 10, грудня: 11,
   };
+  const now = new Date();
+  const relativeMatch = text.match(/(?:^|\s)(сьогодні|завтра)(?=\s|$)(?:\s*(?:о|в))?\s*(\d{1,2})?(?:\s*[:.,]\s*(\d{1,2}))?/i);
+  if (relativeMatch) {
+    const reminderDate = new Date(now);
+    if (relativeMatch[1].toLocaleLowerCase("uk-UA") === "завтра") {
+      reminderDate.setDate(reminderDate.getDate() + 1);
+    }
+
+    const hasTime = relativeMatch[2] !== undefined;
+    const roundedMinutes = Math.ceil((now.getMinutes() + 1) / 5) * 5;
+    const hour = hasTime ? Number(relativeMatch[2]) : now.getHours() + Math.floor(roundedMinutes / 60);
+    const minute = hasTime ? Number(relativeMatch[3] || 0) : roundedMinutes % 60;
+    reminderDate.setHours(hour, minute, 0, 0);
+
+    const title = text.replace(relativeMatch[0], " ").replace(/^\s*(?:на|для)\s+/i, "").replace(/\s+/g, " ").trim();
+    return { title: title || text, reminderAt: reminderDate.toISOString() };
+  }
+
   const match = text.match(/(?:на\s+)?(\d{1,2})\s+(січня|лютого|березня|квітня|травня|червня|липня|серпня|жовтня|листопада|грудня)(?:\s+(\d{4}))?\s*(?:о|в)\s*(\d{1,2})(?:\s*[:.,]\s*(\d{1,2}))?/i);
   if (!match) return { title: text, reminderAt: null };
 
-  const now = new Date();
   const year = Number(match[3] || now.getFullYear());
   const hour = Number(match[4]);
   const minute = Number(match[5] || 0);
@@ -743,9 +824,15 @@ function openPriorityPicker(task, anchor, showReminder = false) {
 
   document.body.append(picker);
   const rect = anchor.getBoundingClientRect();
+  const viewport = window.visualViewport;
+  const viewportTop = viewport?.offsetTop || 0;
+  const viewportLeft = viewport?.offsetLeft || 0;
+  const viewportHeight = viewport?.height || window.innerHeight;
+  const viewportWidth = viewport?.width || window.innerWidth;
+  picker.style.maxHeight = `${Math.max(160, viewportHeight - 24)}px`;
   const pickerRect = picker.getBoundingClientRect();
-  const left = Math.min(Math.max(12, rect.left), window.innerWidth - pickerRect.width - 12);
-  const top = Math.min(rect.bottom + 8, window.innerHeight - pickerRect.height - 12);
+  const left = Math.min(Math.max(viewportLeft + 12, rect.left), viewportLeft + viewportWidth - pickerRect.width - 12);
+  const top = Math.min(Math.max(viewportTop + 12, rect.bottom + 8), viewportTop + viewportHeight - pickerRect.height - 12);
   picker.style.left = `${left}px`;
   picker.style.top = `${top}px`;
 }
@@ -1011,7 +1098,12 @@ window.openTaskFromNotification = (taskId, attempts = 0) => {
   }
 
   const isReminderTask = Boolean(task.reminderAt);
-  setTaskFilter("all");
+  const taskFilter = task.priority === "high"
+    ? "urgent"
+    : task.title.toLocaleLowerCase("uk-UA").includes("купит")
+      ? "buy"
+      : "all";
+  setTaskFilter(taskFilter);
   switchTab(isReminderTask ? "trash" : "tasks");
   const taskItem = (isReminderTask ? els.trashList : els.taskList)
     .querySelector(`.task-item[data-task-id="${CSS.escape(taskId)}"]`);
@@ -1019,7 +1111,7 @@ window.openTaskFromNotification = (taskId, attempts = 0) => {
 
   taskItem.scrollIntoView({ behavior: "smooth", block: "center" });
   taskItem.classList.add("notification-target");
-  window.setTimeout(() => taskItem.classList.remove("notification-target"), 1800);
+  window.setTimeout(() => taskItem.classList.remove("notification-target"), 3000);
 };
 
 function setTaskFilter(filterName) {
@@ -1131,4 +1223,4 @@ if ("serviceWorker" in navigator) {
 setupSpeechRecognition();
 setupNewReminderPicker();
 render();
-if (ensureAppVersion()) initDatabase();
+setupAccessGate();
