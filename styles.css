@@ -700,21 +700,23 @@ input:focus {
 }
 
 .reminder-remove-action {
-  color: #a34338;
-  background: rgba(220, 76, 62, 0.08);
+  color: #9b5d0c;
+  background: #fff6df;
+  border-color: #f5dea8;
 }
 
 .reminder-remove-action:hover {
-  background: rgba(220, 76, 62, 0.15);
+  background: #ffedbd;
 }
 
 .reminder-delete-action {
-  color: #8c3028;
-  background: rgba(179, 49, 38, 0.12);
+  color: #fff;
+  background: linear-gradient(135deg, #d94d40, #bd342b);
+  box-shadow: 0 8px 18px rgba(189, 52, 43, 0.2);
 }
 
 .reminder-delete-action:hover {
-  background: rgba(179, 49, 38, 0.2);
+  background: linear-gradient(135deg, #c84236, #a82a22);
 }
 
 .reminder-picker-fields {
@@ -753,16 +755,35 @@ input:focus {
 
 .reminder-picker-actions {
   display: grid;
-  gap: 2px;
+  gap: 8px;
   border-top: 1px solid var(--line);
-  padding-top: 4px;
+  padding-top: 12px;
 }
 
 .reminder-action {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
-  min-height: 34px;
-  font-size: 0.78rem;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  font-size: 0.82rem;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  text-align: center;
+  transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.reminder-save-action {
+  color: #fff;
+  background: linear-gradient(135deg, #15956b, var(--brand-2));
+  box-shadow: 0 8px 18px rgba(32, 166, 122, 0.24);
+}
+
+.reminder-save-action:hover {
+  background: linear-gradient(135deg, #117d5a, #198b68);
 }
 
 .empty-state {
