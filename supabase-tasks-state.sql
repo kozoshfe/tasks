@@ -63,3 +63,25 @@ create policy "tasks_select" on public.tasks for select to anon using (true);
 create policy "tasks_insert" on public.tasks for insert to anon with check (true);
 create policy "tasks_update" on public.tasks for update to anon using (true) with check (true);
 create policy "tasks_delete" on public.tasks for delete to anon using (true);
+
+-- One-off tasks are disposable: as soon as they are completed, remove their
+-- row even if an older cached version of the app sent the update.
+create or replace function public.remove_completed_one_off_task()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.done = true and new.recurrence is null then
+    delete from public.tasks where id = new.id;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists remove_completed_one_off_task on public.tasks;
+create trigger remove_completed_one_off_task
+after insert or update of done, recurrence on public.tasks
+for each row execute function public.remove_completed_one_off_task();
+
+-- Clean up completed one-off tasks that were saved before this rule existed.
+delete from public.tasks where done = true and recurrence is null;

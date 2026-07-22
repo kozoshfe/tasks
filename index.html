@@ -77,21 +77,26 @@
             </svg>
           </button>
         </div>
-        <label class="input-label" for="taskReminder">Нагадати</label>
-        <div class="new-reminder-picker" id="taskReminder">
-          <select id="newReminderDay" aria-label="День"></select>
-          <select id="newReminderMonth" aria-label="Місяць"></select>
-          <select id="newReminderYear" aria-label="Рік"></select>
-          <select id="newReminderHour" aria-label="Година"></select>
-          <select id="newReminderMinute" aria-label="Хвилини"></select>
+        <label class="reminder-toggle" for="newReminderEnabled">
+          <input id="newReminderEnabled" type="checkbox" />
+          Додати нагадування
+        </label>
+        <div class="new-reminder-options" id="taskReminder" hidden>
+          <div class="new-reminder-picker">
+            <select id="newReminderDay" aria-label="День"></select>
+            <select id="newReminderMonth" aria-label="Місяць"></select>
+            <select id="newReminderYear" aria-label="Рік"></select>
+            <select id="newReminderHour" aria-label="Година"></select>
+            <select id="newReminderMinute" aria-label="Хвилини"></select>
+          </div>
+          <label class="input-label repeat-label" for="taskRepeat">Повторювати</label>
+          <select class="repeat-select" id="taskRepeat" aria-label="Повторювати">
+            <option value="none">Не повторювати</option>
+            <option value="daily">Щодня</option>
+            <option value="weekly-monday">Щопонеділка</option>
+            <option value="monthly-20">Кожного 20 числа</option>
+          </select>
         </div>
-        <label class="input-label repeat-label" for="taskRepeat">Повторювати</label>
-        <select class="repeat-select" id="taskRepeat" aria-label="Повторювати">
-          <option value="none">Не повторювати</option>
-          <option value="daily">Щодня</option>
-          <option value="weekly-monday">Щопонеділка</option>
-          <option value="monthly-20">Кожного 20 числа</option>
-        </select>
         <p class="voice-status" id="voiceStatus" role="status" aria-live="polite"></p>
         <button class="modal-submit-button" id="submitTaskButton" type="button">Додати таску</button>
       </section>
@@ -116,6 +121,6 @@
       </button>
     </nav>
 
-    <script src="app.js?v=79" defer></script>
+    <script src="app.js?v=80" defer></script>
   </body>
 </html>

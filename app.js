@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "72";
+const APP_VERSION = "73";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const ACCESS_STORAGE_KEY = "simple-task-pwa-access-granted";
 const ACCESS_CODE = "15057050";
@@ -38,6 +38,7 @@ const els = {
   taskCount: document.querySelector("#taskCount"),
   taskInput: document.querySelector("#taskInput"),
   taskReminder: document.querySelector("#taskReminder"),
+  newReminderEnabled: document.querySelector("#newReminderEnabled"),
   newReminderDay: document.querySelector("#newReminderDay"),
   newReminderMonth: document.querySelector("#newReminderMonth"),
   newReminderYear: document.querySelector("#newReminderYear"),
@@ -93,6 +94,11 @@ function setupNewReminderPicker() {
 
 function getNewReminderValue() {
   return new Date(Number(els.newReminderYear.value), Number(els.newReminderMonth.value), Number(els.newReminderDay.value), Number(els.newReminderHour.value), Number(els.newReminderMinute.value)).toISOString();
+}
+
+function updateNewReminderVisibility() {
+  els.taskReminder.hidden = !els.newReminderEnabled.checked;
+  if (!els.newReminderEnabled.checked) els.taskRepeat.value = "none";
 }
 
 function ensureAppVersion() {
@@ -501,11 +507,13 @@ async function addTask() {
 
   const parsedTitle = parseVoiceReminder(title);
   const task = createTask(parsedTitle.title);
-  task.reminderAt = parsedTitle.reminderAt || getNewReminderValue();
-  task.recurrence = els.taskRepeat.value === "none" ? null : els.taskRepeat.value;
+  task.reminderAt = parsedTitle.reminderAt || (els.newReminderEnabled.checked ? getNewReminderValue() : null);
+  task.recurrence = task.reminderAt && els.taskRepeat.value !== "none" ? els.taskRepeat.value : null;
   state.tasks.push(task);
   scheduleNativeReminder(task);
   els.taskInput.value = "";
+  els.newReminderEnabled.checked = false;
+  updateNewReminderVisibility();
   els.taskRepeat.value = "none";
   closeTaskModal();
   render();
@@ -1256,5 +1264,7 @@ if ("serviceWorker" in navigator) {
 
 setupSpeechRecognition();
 setupNewReminderPicker();
+els.newReminderEnabled.addEventListener("change", updateNewReminderVisibility);
+updateNewReminderVisibility();
 render();
 setupAccessGate();
