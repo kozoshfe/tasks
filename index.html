@@ -5,10 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#184e77" />
     <title>Трекер завдань</title>
+    <script>
+      // Run before the stylesheet is painted so returning users never see the access form flash.
+      try {
+        if (
+          localStorage.getItem("simple-task-pwa-access-granted") === "true" ||
+          window.AndroidAccess?.hasAccess?.() === true
+        ) {
+          document.documentElement.classList.add("access-already-granted");
+        }
+      } catch (_) {}
+    </script>
     <link rel="manifest" href="manifest.json?v=36" />
     <link rel="icon" href="icon-512.png?v=27" />
     <link rel="apple-touch-icon" href="icon-192.png?v=27" />
-    <link rel="stylesheet" href="styles.css?v=60" />
+    <link rel="stylesheet" href="styles.css?v=61" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Таски" />
@@ -105,6 +116,6 @@
       </button>
     </nav>
 
-    <script src="app.js?v=77" defer></script>
+    <script src="app.js?v=78" defer></script>
   </body>
 </html>

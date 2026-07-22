@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "70";
+const APP_VERSION = "71";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const ACCESS_STORAGE_KEY = "simple-task-pwa-access-granted";
 const ACCESS_CODE = "15057050";
@@ -118,8 +118,25 @@ async function openApp() {
   els.accessScreen.hidden = true;
 }
 
+function hasGrantedAccess() {
+  try {
+    return localStorage.getItem(ACCESS_STORAGE_KEY) === "true" || window.AndroidAccess?.hasAccess?.() === true;
+  } catch (_) {
+    return window.AndroidAccess?.hasAccess?.() === true;
+  }
+}
+
+function rememberGrantedAccess() {
+  try {
+    localStorage.setItem(ACCESS_STORAGE_KEY, "true");
+  } catch (_) {}
+  window.AndroidAccess?.grant?.();
+}
+
 function setupAccessGate() {
-  if (localStorage.getItem(ACCESS_STORAGE_KEY) === "true") {
+  if (hasGrantedAccess()) {
+    // Migrate users who previously authenticated only in WebView storage.
+    rememberGrantedAccess();
     openApp();
     return;
   }
@@ -127,7 +144,7 @@ function setupAccessGate() {
   els.accessForm.addEventListener("submit", (event) => {
     event.preventDefault();
     if (els.accessCode.value === ACCESS_CODE) {
-      localStorage.setItem(ACCESS_STORAGE_KEY, "true");
+      rememberGrantedAccess();
       els.accessError.textContent = "";
       openApp();
       return;

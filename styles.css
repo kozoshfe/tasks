@@ -41,6 +41,11 @@ body {
   background: linear-gradient(145deg, #e4f4ed, var(--bg) 48%, #f8e7df);
 }
 
+/* The access state is read synchronously in <head>, before the first paint. */
+.access-already-granted .access-screen {
+  display: none;
+}
+
 .access-card {
   width: min(100%, 380px);
   padding: 30px;
