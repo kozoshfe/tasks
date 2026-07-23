@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "74";
+const APP_VERSION = "75";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const ACCESS_STORAGE_KEY = "simple-task-pwa-access-granted";
 const ACCESS_CODE = "15057050";
@@ -48,6 +48,7 @@ const els = {
   taskModal: document.querySelector("#taskModal"),
   taskList: document.querySelector("#taskList"),
   taskFilterTabs: document.querySelectorAll("[data-task-filter]"),
+  appShell: document.querySelector(".app-shell"),
   tasksPanel: document.querySelector("#tasksPanel"),
   tasksTab: document.querySelector("#tasksTab"),
   trashCount: document.querySelector("#trashCount"),
@@ -69,6 +70,7 @@ let dragState = null;
 let navMicTapTimer = null;
 let priorityPickerTaskId = null;
 let activeTaskFilter = "all";
+let taskFilterSwipe = null;
 let syncedTaskIds = new Set();
 const state = {
   tasks: [],
@@ -1171,6 +1173,46 @@ function setTaskFilter(filterName) {
   render();
 }
 
+function setupTaskFilterSwipe() {
+  const filterOrder = ["all", "urgent", "buy"];
+  const swipeThreshold = 64;
+
+  const isBlankTasksArea = (event) => {
+    if (els.tasksPanel.hidden || event.pointerType !== "touch") return false;
+    if (event.target.closest("button, input, select, textarea, a, .task-item")) return false;
+
+    // The gesture is reserved for the unused space below the task card list.
+    return event.clientY >= els.tasksPanel.getBoundingClientRect().bottom;
+  };
+
+  els.appShell.addEventListener("pointerdown", (event) => {
+    if (!isBlankTasksArea(event)) return;
+    taskFilterSwipe = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+    };
+  });
+
+  els.appShell.addEventListener("pointerup", (event) => {
+    if (!taskFilterSwipe || taskFilterSwipe.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - taskFilterSwipe.startX;
+    const deltaY = event.clientY - taskFilterSwipe.startY;
+    taskFilterSwipe = null;
+
+    if (Math.abs(deltaX) < swipeThreshold || Math.abs(deltaX) <= Math.abs(deltaY)) return;
+
+    const currentIndex = filterOrder.indexOf(activeTaskFilter);
+    const nextIndex = currentIndex + (deltaX < 0 ? 1 : -1);
+    if (nextIndex >= 0 && nextIndex < filterOrder.length) setTaskFilter(filterOrder[nextIndex]);
+  });
+
+  els.appShell.addEventListener("pointercancel", () => {
+    taskFilterSwipe = null;
+  });
+}
+
 function switchTab(tabName) {
   const showTasks = tabName === "tasks";
   els.tasksPanel.hidden = !showTasks;
@@ -1254,6 +1296,7 @@ els.trashTab.addEventListener("click", () => switchTab("trash"));
 els.taskFilterTabs.forEach((tab) => {
   tab.addEventListener("click", () => setTaskFilter(tab.dataset.taskFilter));
 });
+setupTaskFilterSwipe();
 els.navMicButton.addEventListener("contextmenu", (event) => event.preventDefault());
 els.navMicButton.addEventListener("click", handleNavMicTap);
 
