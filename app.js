@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "75";
+const APP_VERSION = "76";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const ACCESS_STORAGE_KEY = "simple-task-pwa-access-granted";
 const ACCESS_CODE = "15057050";
@@ -589,7 +589,7 @@ function openTaskTitleEditor(task) {
   window.requestAnimationFrame(() => {
     backdrop.classList.add("open");
     input.focus();
-    input.select();
+    input.setSelectionRange(input.value.length, input.value.length);
   });
 }
 
