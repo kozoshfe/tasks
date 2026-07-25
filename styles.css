@@ -445,7 +445,8 @@ input:focus {
 }
 
 /* Task filters use a compact four-column navigation, so every category remains visible. */
-#tasksPanel .task-filter-tabs {
+#tasksPanel .task-filter-tabs,
+#trashPanel .task-filter-tabs {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   width: 100%;
@@ -453,15 +454,16 @@ input:focus {
   overflow: visible;
 }
 
-#tasksPanel .task-filter-tab {
+#tasksPanel .task-filter-tab,
+#trashPanel .task-filter-tab {
   position: relative;
   display: grid;
-  grid-template-rows: 32px auto 32px;
+  grid-template-rows: auto 32px;
   place-items: center;
   gap: 3px;
   min-width: 0;
-  min-height: 108px;
-  padding: 8px 2px 12px;
+  min-height: 76px;
+  padding: 10px 2px 12px;
   color: var(--ink);
   border-radius: 14px 14px 0 0;
   font-size: 0.78rem;
@@ -469,13 +471,16 @@ input:focus {
 }
 
 #tasksPanel .task-filter-tab:hover,
-#tasksPanel .task-filter-tab.active {
+#tasksPanel .task-filter-tab.active,
+#trashPanel .task-filter-tab:hover,
+#trashPanel .task-filter-tab.active {
   color: var(--ink);
   background: transparent;
   box-shadow: none;
 }
 
-#tasksPanel .task-filter-tab.active::after {
+#tasksPanel .task-filter-tab.active::after,
+#trashPanel .task-filter-tab.active::after {
   position: absolute;
   right: 8px;
   bottom: 0;
@@ -485,18 +490,6 @@ input:focus {
   background: #c8483c;
   border-radius: 999px 999px 0 0;
 }
-
-.filter-icon {
-  display: grid;
-  place-items: center;
-  height: 32px;
-  font-size: 1.65rem;
-  line-height: 1;
-}
-
-#tasksPanel .task-filter-tab:nth-child(2) .filter-icon { color: #526fa6; letter-spacing: -0.45em; }
-#tasksPanel .task-filter-tab:nth-child(3) .filter-icon { color: #2b8a62; }
-#tasksPanel .task-filter-tab:nth-child(4) .filter-icon { color: #9a67be; }
 
 .filter-label {
   overflow: hidden;
@@ -532,6 +525,15 @@ input:focus {
 #tasksPanel .task-filter-tab:nth-child(2).active::after { background: #526fa6; }
 #tasksPanel .task-filter-tab:nth-child(3).active::after { background: #2b8a62; }
 #tasksPanel .task-filter-tab:nth-child(4).active::after { background: #9a67be; }
+
+#trashPanel .task-filter-tabs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#trashPanel .task-filter-tab:nth-child(1) .filter-count { color: #9b5d0c; background: #fff0d7; }
+#trashPanel .task-filter-tab:nth-child(2) .filter-count { color: #73429b; background: #f3e9ff; }
+#trashPanel .task-filter-tab.active::after { background: #d48b27; }
+#trashPanel .task-filter-tab:nth-child(2).active::after { background: #9a67be; }
 
 .text-button {
   padding: 0 14px;
@@ -1011,7 +1013,7 @@ input:focus {
   }
 
   #tasksPanel .task-filter-tab {
-    min-height: 102px;
+    min-height: 72px;
     font-size: 0.7rem;
   }
 
