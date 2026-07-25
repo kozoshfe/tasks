@@ -22,6 +22,7 @@
 html {
   min-height: 100%;
   background: var(--bg);
+  overflow-x: hidden;
 }
 
 body {
@@ -29,6 +30,7 @@ body {
   margin: 0;
   color: var(--ink);
   background: var(--bg);
+  overflow-x: hidden;
 }
 
 .access-screen {
@@ -442,11 +444,14 @@ input:focus {
   box-shadow: 0 8px 18px rgba(16, 24, 40, 0.16);
 }
 
-/* The task screen has four filters; keep all of them visible on narrow phones. */
+/* Four filters do not fit into the content column of smaller Android phones.
+   Keep the tabs reachable without letting the whole page overflow horizontally. */
 #tasksPanel .task-filter-tabs {
   width: 100%;
-  justify-content: space-between;
-  overflow: visible;
+  justify-content: flex-start;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 #tasksPanel .task-filter-tab {
@@ -923,6 +928,67 @@ input:focus {
   border-radius: 999px;
   font-size: 0.78rem;
   line-height: 1;
+}
+
+@media (max-width: 380px) {
+  .app-shell {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .section-heading {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .content {
+    padding: 10px;
+  }
+
+  .section-heading {
+    margin: -10px -10px 8px;
+  }
+
+  .bottom-tabs {
+    grid-template-columns: minmax(0, 1fr) 54px minmax(0, 1fr);
+    width: calc(100% - 20px);
+    gap: 3px;
+    padding: 6px;
+  }
+
+  .nav-mic-button {
+    width: 54px;
+    height: 54px;
+    min-height: 54px;
+  }
+
+  .tab-button {
+    min-width: 0;
+    gap: 4px;
+    font-size: 0.78rem;
+  }
+
+  .tab-button span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 340px) {
+  .modal-backdrop {
+    padding: 10px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  }
+
+  .composer {
+    padding: 14px;
+  }
+
+  .input-row {
+    grid-template-columns: minmax(0, 1fr) 50px;
+    gap: 8px;
+  }
 }
 
 button:active {
