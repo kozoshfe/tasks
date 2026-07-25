@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "81";
+const APP_VERSION = "83";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const ACCESS_STORAGE_KEY = "simple-task-pwa-access-granted";
 const ACCESS_CODE = "15057050";
@@ -51,7 +51,6 @@ const els = {
   appShell: document.querySelector(".app-shell"),
   tasksPanel: document.querySelector("#tasksPanel"),
   tasksTab: document.querySelector("#tasksTab"),
-  trashCount: document.querySelector("#trashCount"),
   trashList: document.querySelector("#trashList"),
   trashPanel: document.querySelector("#trashPanel"),
   trashTab: document.querySelector("#trashTab"),
@@ -219,7 +218,11 @@ function getTaskCategory(task) {
 
 function getFilteredTasks() {
   const isReminderTask = (task) => Boolean(task.reminderAt);
-  return state.tasks.filter((task) => !isReminderTask(task) && getTaskCategory(task) === activeTaskFilter);
+  return state.tasks.filter((task) => {
+    if (isReminderTask(task)) return false;
+    const category = getTaskCategory(task);
+    return activeTaskFilter === "all" ? category === null : category === activeTaskFilter;
+  });
 }
 
 function getMandatoryTasks() {
@@ -1175,7 +1178,6 @@ function render() {
   const mandatoryTasks = getMandatoryTasks();
   els.taskList.replaceChildren(...visibleTasks.map((task) => makeTaskItem(task, "tasks")));
   els.trashList.replaceChildren(...mandatoryTasks.map((task) => makeTaskItem(task, "tasks")));
-  els.trashCount.textContent = mandatoryTasks.length;
   rescheduleNativeReminders();
 }
 
@@ -1187,7 +1189,7 @@ window.openTaskFromNotification = (taskId, attempts = 0) => {
   }
 
   const isReminderTask = Boolean(task.reminderAt);
-  const taskFilter = getTaskCategory(task) || "urgent";
+  const taskFilter = getTaskCategory(task) || "all";
   setTaskFilter(taskFilter);
   switchTab(isReminderTask ? "trash" : "tasks");
   if (isReminderTask && task.recurrence) setMandatoryFilter("recurring");
@@ -1221,7 +1223,7 @@ function setMandatoryFilter(filterName) {
 }
 
 function setupTaskFilterSwipe() {
-  const filterOrder = ["urgent", "buy", "laptops"];
+  const filterOrder = ["urgent", "all", "buy", "laptops"];
   const swipeThreshold = 64;
 
   const isBlankTasksArea = (event) => {
