@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "83";
+const APP_VERSION = "85";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const ACCESS_STORAGE_KEY = "simple-task-pwa-access-granted";
 const ACCESS_CODE = "15057050";
@@ -71,6 +71,7 @@ let priorityPickerTaskId = null;
 let activeTaskFilter = "urgent";
 let activeMandatoryFilter = "reminders";
 let taskFilterSwipe = null;
+let mandatoryFilterSwipe = null;
 let syncedTaskIds = new Set();
 const state = {
   tasks: [],
@@ -1262,6 +1263,43 @@ function setupTaskFilterSwipe() {
   });
 }
 
+function setupMandatoryFilterSwipe() {
+  const filterOrder = ["reminders", "recurring"];
+  const swipeThreshold = 64;
+
+  const isBlankMandatoryArea = (event) => {
+    if (els.trashPanel.hidden || event.pointerType !== "touch") return false;
+    if (event.target.closest("button, input, select, textarea, a, .task-item")) return false;
+    return event.clientY >= els.trashPanel.getBoundingClientRect().bottom;
+  };
+
+  els.appShell.addEventListener("pointerdown", (event) => {
+    if (!isBlankMandatoryArea(event)) return;
+    mandatoryFilterSwipe = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+    };
+  });
+
+  els.appShell.addEventListener("pointerup", (event) => {
+    if (!mandatoryFilterSwipe || mandatoryFilterSwipe.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - mandatoryFilterSwipe.startX;
+    const deltaY = event.clientY - mandatoryFilterSwipe.startY;
+    mandatoryFilterSwipe = null;
+    if (Math.abs(deltaX) < swipeThreshold || Math.abs(deltaX) <= Math.abs(deltaY)) return;
+
+    const currentIndex = filterOrder.indexOf(activeMandatoryFilter);
+    const nextIndex = currentIndex + (deltaX < 0 ? 1 : -1);
+    if (nextIndex >= 0 && nextIndex < filterOrder.length) setMandatoryFilter(filterOrder[nextIndex]);
+  });
+
+  els.appShell.addEventListener("pointercancel", () => {
+    mandatoryFilterSwipe = null;
+  });
+}
+
 function switchTab(tabName) {
   const showTasks = tabName === "tasks";
   // The mandatory screen always opens on one-time reminders first.
@@ -1351,6 +1389,7 @@ els.mandatoryFilterTabs.forEach((tab) => {
   tab.addEventListener("click", () => setMandatoryFilter(tab.dataset.mandatoryFilter));
 });
 setupTaskFilterSwipe();
+setupMandatoryFilterSwipe();
 els.navMicButton.addEventListener("contextmenu", (event) => event.preventDefault());
 els.navMicButton.addEventListener("click", handleNavMicTap);
 

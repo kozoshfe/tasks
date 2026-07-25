@@ -442,6 +442,19 @@ input:focus {
   box-shadow: 0 8px 18px rgba(16, 24, 40, 0.16);
 }
 
+/* The task screen has four filters; keep all of them visible on narrow phones. */
+#tasksPanel .task-filter-tabs {
+  width: 100%;
+  justify-content: space-between;
+  overflow: visible;
+}
+
+#tasksPanel .task-filter-tab {
+  min-height: 34px;
+  padding: 0 7px;
+  font-size: 0.78rem;
+}
+
 .section-heading span {
   flex: 0 0 auto;
   min-width: 36px;
