@@ -444,50 +444,65 @@ input:focus {
   box-shadow: 0 8px 18px rgba(16, 24, 40, 0.16);
 }
 
-/* Four filters do not fit into the content column of smaller Android phones.
-   Keep the tabs reachable without letting the whole page overflow horizontally. */
+/* Task filters use a compact four-column navigation, so every category remains visible. */
 #tasksPanel .task-filter-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   width: 100%;
-  justify-content: flex-start;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  -webkit-overflow-scrolling: touch;
+  gap: 0;
+  overflow: visible;
 }
 
 #tasksPanel .task-filter-tab {
-  min-height: 34px;
-  padding: 0 7px;
+  position: relative;
+  display: grid;
+  grid-template-rows: 32px auto 32px;
+  place-items: center;
+  gap: 3px;
+  min-width: 0;
+  min-height: 108px;
+  padding: 8px 2px 12px;
+  color: var(--ink);
+  border-radius: 14px 14px 0 0;
   font-size: 0.78rem;
+  white-space: nowrap;
 }
 
-@media (max-width: 480px) {
-  #tasksPanel .task-filter-tabs {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px;
-    overflow: visible;
-  }
-
-  #tasksPanel .task-filter-tab {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 0;
-    padding: 0 6px;
-    white-space: nowrap;
-  }
+#tasksPanel .task-filter-tab:hover,
+#tasksPanel .task-filter-tab.active {
+  color: var(--ink);
+  background: transparent;
+  box-shadow: none;
 }
 
-.section-heading span {
-  flex: 0 0 auto;
-  min-width: 36px;
-  padding: 5px 10px;
-  color: var(--brand);
-  background: rgba(16, 24, 40, 0.08);
-  border-radius: 999px;
-  font-size: 0.82rem;
-  font-weight: 800;
-  text-align: center;
+#tasksPanel .task-filter-tab.active::after {
+  position: absolute;
+  right: 8px;
+  bottom: 0;
+  left: 8px;
+  height: 4px;
+  content: "";
+  background: #c8483c;
+  border-radius: 999px 999px 0 0;
+}
+
+.filter-icon {
+  display: grid;
+  place-items: center;
+  height: 32px;
+  font-size: 1.65rem;
+  line-height: 1;
+}
+
+#tasksPanel .task-filter-tab:nth-child(2) .filter-icon { color: #526fa6; letter-spacing: -0.45em; }
+#tasksPanel .task-filter-tab:nth-child(3) .filter-icon { color: #2b8a62; }
+#tasksPanel .task-filter-tab:nth-child(4) .filter-icon { color: #9a67be; }
+
+.filter-label {
+  overflow: hidden;
+  max-width: 100%;
+  font-weight: 850;
+  text-overflow: ellipsis;
 }
 
 .task-filter-tab .filter-count {
@@ -496,7 +511,7 @@ input:focus {
   min-width: 30px;
   min-height: 30px;
   padding: 3px 8px;
-  margin-left: 3px;
+  margin: 0;
   color: var(--brand);
   background: rgba(16, 24, 40, 0.08);
   border-radius: 999px;
@@ -509,6 +524,14 @@ input:focus {
   color: var(--brand);
   background: #ffffff;
 }
+
+#tasksPanel .task-filter-tab:nth-child(1) .filter-count { color: #fff; background: #c8483c; }
+#tasksPanel .task-filter-tab:nth-child(2) .filter-count { color: #314f8a; background: #edf1ff; }
+#tasksPanel .task-filter-tab:nth-child(3) .filter-count { color: #176849; background: #e4f5ed; }
+#tasksPanel .task-filter-tab:nth-child(4) .filter-count { color: #73429b; background: #f3e9ff; }
+#tasksPanel .task-filter-tab:nth-child(2).active::after { background: #526fa6; }
+#tasksPanel .task-filter-tab:nth-child(3).active::after { background: #2b8a62; }
+#tasksPanel .task-filter-tab:nth-child(4).active::after { background: #9a67be; }
 
 .text-button {
   padding: 0 14px;
@@ -988,7 +1011,8 @@ input:focus {
   }
 
   #tasksPanel .task-filter-tab {
-    font-size: 0.74rem;
+    min-height: 102px;
+    font-size: 0.7rem;
   }
 
   .task-filter-tab .filter-count {
