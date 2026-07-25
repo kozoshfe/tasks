@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "76";
+const APP_VERSION = "81";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const ACCESS_STORAGE_KEY = "simple-task-pwa-access-granted";
 const ACCESS_CODE = "15057050";
@@ -35,7 +35,6 @@ const els = {
   micButton: document.querySelector("#micButton"),
   navMicButton: document.querySelector("#navMicButton"),
   submitTaskButton: document.querySelector("#submitTaskButton"),
-  taskCount: document.querySelector("#taskCount"),
   taskInput: document.querySelector("#taskInput"),
   taskReminder: document.querySelector("#taskReminder"),
   newReminderEnabled: document.querySelector("#newReminderEnabled"),
@@ -48,6 +47,7 @@ const els = {
   taskModal: document.querySelector("#taskModal"),
   taskList: document.querySelector("#taskList"),
   taskFilterTabs: document.querySelectorAll("[data-task-filter]"),
+  mandatoryFilterTabs: document.querySelectorAll("[data-mandatory-filter]"),
   appShell: document.querySelector(".app-shell"),
   tasksPanel: document.querySelector("#tasksPanel"),
   tasksTab: document.querySelector("#tasksTab"),
@@ -69,7 +69,8 @@ let shouldAutoAddVoiceResult = false;
 let dragState = null;
 let navMicTapTimer = null;
 let priorityPickerTaskId = null;
-let activeTaskFilter = "all";
+let activeTaskFilter = "urgent";
+let activeMandatoryFilter = "reminders";
 let taskFilterSwipe = null;
 let syncedTaskIds = new Set();
 const state = {
@@ -177,7 +178,7 @@ function normalizeTask(task) {
       : task?.priority === "priority-low" ? "low" : task?.priority;
   return {
     ...task,
-    priority: hasPriority(priority) ? priority : null,
+    priority: isUrgentTaskTitle(task?.title || "") ? "high" : (hasPriority(priority) ? priority : null),
   };
 }
 
@@ -200,20 +201,33 @@ function sortActiveTasks() {
   state.tasks = sortTasksByPriority(state.tasks);
 }
 
+function getTaskCategory(task) {
+  const title = task.title.toLocaleLowerCase("uk-UA");
+  const matches = [
+    ["urgent", title.indexOf("терміново")],
+    ["buy", title.indexOf("купит")],
+    ["laptops", title.indexOf("ноутбук")],
+  ].filter(([, index]) => index !== -1);
+
+  if (matches.length) {
+    matches.sort(([, firstIndex], [, secondIndex]) => firstIndex - secondIndex);
+    return matches[0][0];
+  }
+
+  return task.priority === "high" ? "urgent" : null;
+}
+
 function getFilteredTasks() {
-  const isBuyTask = (task) => task.title.toLocaleLowerCase("uk-UA").includes("купит");
-  const isUrgentTask = (task) => task.priority === "high";
   const isReminderTask = (task) => Boolean(task.reminderAt);
+  return state.tasks.filter((task) => !isReminderTask(task) && getTaskCategory(task) === activeTaskFilter);
+}
 
-  if (activeTaskFilter === "urgent") {
-    return state.tasks.filter((task) => !isReminderTask(task) && isUrgentTask(task));
+function getMandatoryTasks() {
+  if (activeMandatoryFilter === "recurring") {
+    return state.tasks.filter((task) => Boolean(task.recurrence));
   }
 
-  if (activeTaskFilter === "buy") {
-    return state.tasks.filter((task) => !isReminderTask(task) && isBuyTask(task));
-  }
-
-  return state.tasks.filter((task) => !isReminderTask(task) && !isUrgentTask(task) && !isBuyTask(task));
+  return state.tasks.filter((task) => Boolean(task.reminderAt) && !task.recurrence);
 }
 
 function applyState(nextState) {
@@ -440,13 +454,18 @@ function formatTaskTitle(title) {
   return cleanTitle.charAt(0).toLocaleUpperCase("uk-UA") + cleanTitle.slice(1);
 }
 
+function isUrgentTaskTitle(title) {
+  return title.toLocaleLowerCase("uk-UA").includes("терміново");
+}
+
 function createTask(title) {
+  const formattedTitle = formatTaskTitle(title);
   return {
     id: crypto.randomUUID(),
-    title: formatTaskTitle(title),
+    title: formattedTitle,
     done: false,
     createdAt: Date.now(),
-    priority: null,
+    priority: isUrgentTaskTitle(formattedTitle) ? "high" : null,
     reminderAt: null,
     recurrence: null,
   };
@@ -458,6 +477,27 @@ function parseVoiceReminder(text) {
     липня: 6, серпня: 7, вересня: 8, жовтня: 9, листопада: 10, грудня: 11,
   };
   const now = new Date();
+  const weekdays = {
+    понеділок: 1, понеділка: 1,
+    вівторок: 2, вівторка: 2,
+    середа: 3, середу: 3,
+    четвер: 4, четверга: 4,
+    "п’ятниця": 5, "п'ятниця": 5, пятниця: 5, "п’ятницю": 5, "п'ятницю": 5, пятницю: 5,
+    субота: 6, суботу: 6,
+    неділя: 0, неділю: 0,
+  };
+  const weekdayMatch = text.match(/(?:^|\s)(понеділок|понеділка|вівторок|вівторка|середа|середу|четвер|четверга|п[’']?ятниця|п[’']?ятницю|субота|суботу|неділя|неділю)(?=\s|$)(?:\s*(?:о|в))?\s*(\d{1,2})(?:\s*[:.,]\s*(\d{1,2}))?(?:\s*(?:та\s+)?год(?:ина|ині|ин)?\.?)?/i);
+  if (weekdayMatch) {
+    const targetDay = weekdays[weekdayMatch[1].toLocaleLowerCase("uk-UA")];
+    const reminderDate = new Date(now);
+    let daysUntil = (targetDay - now.getDay() + 7) % 7;
+    if (daysUntil === 0) daysUntil = 7;
+    reminderDate.setDate(reminderDate.getDate() + daysUntil);
+    reminderDate.setHours(Number(weekdayMatch[2]), Number(weekdayMatch[3] || 0), 0, 0);
+
+    const title = text.replace(weekdayMatch[0], " ").replace(/^\s*(?:на|для)\s+/i, "").replace(/\s+/g, " ").trim();
+    return { title: title || text, reminderAt: reminderDate.toISOString() };
+  }
   const relativeMatch = text.match(/(?:^|\s)(сьогодні|завтра)(?=\s|$)(?:\s*(?:о|в))?\s*(\d{1,2})?(?:\s*[:.,]\s*(\d{1,2}))?/i);
   if (relativeMatch) {
     const reminderDate = new Date(now);
@@ -577,6 +617,7 @@ function openTaskTitleEditor(task) {
       return;
     }
     task.title = title;
+    if (isUrgentTaskTitle(title)) task.priority = "high";
     close();
     render();
     await saveState();
@@ -1131,11 +1172,10 @@ function makeTaskItem(task, mode) {
 function render() {
   sortActiveTasks();
   const visibleTasks = getFilteredTasks();
-  const reminderTasks = state.tasks.filter((task) => task.reminderAt);
+  const mandatoryTasks = getMandatoryTasks();
   els.taskList.replaceChildren(...visibleTasks.map((task) => makeTaskItem(task, "tasks")));
-  els.trashList.replaceChildren(...reminderTasks.map((task) => makeTaskItem(task, "tasks")));
-  els.taskCount.textContent = visibleTasks.length;
-  els.trashCount.textContent = reminderTasks.length;
+  els.trashList.replaceChildren(...mandatoryTasks.map((task) => makeTaskItem(task, "tasks")));
+  els.trashCount.textContent = mandatoryTasks.length;
   rescheduleNativeReminders();
 }
 
@@ -1147,13 +1187,10 @@ window.openTaskFromNotification = (taskId, attempts = 0) => {
   }
 
   const isReminderTask = Boolean(task.reminderAt);
-  const taskFilter = task.priority === "high"
-    ? "urgent"
-    : task.title.toLocaleLowerCase("uk-UA").includes("купит")
-      ? "buy"
-      : "all";
+  const taskFilter = getTaskCategory(task) || "urgent";
   setTaskFilter(taskFilter);
   switchTab(isReminderTask ? "trash" : "tasks");
+  if (isReminderTask && task.recurrence) setMandatoryFilter("recurring");
   const taskItem = (isReminderTask ? els.trashList : els.taskList)
     .querySelector(`.task-item[data-task-id="${CSS.escape(taskId)}"]`);
   if (!taskItem) return;
@@ -1173,8 +1210,18 @@ function setTaskFilter(filterName) {
   render();
 }
 
+function setMandatoryFilter(filterName) {
+  activeMandatoryFilter = filterName;
+  els.mandatoryFilterTabs.forEach((tab) => {
+    const isActive = tab.dataset.mandatoryFilter === activeMandatoryFilter;
+    tab.classList.toggle("active", isActive);
+    tab.setAttribute("aria-selected", String(isActive));
+  });
+  render();
+}
+
 function setupTaskFilterSwipe() {
-  const filterOrder = ["all", "urgent", "buy"];
+  const filterOrder = ["urgent", "buy", "laptops"];
   const swipeThreshold = 64;
 
   const isBlankTasksArea = (event) => {
@@ -1215,6 +1262,8 @@ function setupTaskFilterSwipe() {
 
 function switchTab(tabName) {
   const showTasks = tabName === "tasks";
+  // The mandatory screen always opens on one-time reminders first.
+  if (!showTasks) setMandatoryFilter("reminders");
   els.tasksPanel.hidden = !showTasks;
   els.trashPanel.hidden = showTasks;
   els.tasksTab.classList.toggle("active", showTasks);
@@ -1295,6 +1344,9 @@ els.tasksTab.addEventListener("click", () => switchTab("tasks"));
 els.trashTab.addEventListener("click", () => switchTab("trash"));
 els.taskFilterTabs.forEach((tab) => {
   tab.addEventListener("click", () => setTaskFilter(tab.dataset.taskFilter));
+});
+els.mandatoryFilterTabs.forEach((tab) => {
+  tab.addEventListener("click", () => setMandatoryFilter(tab.dataset.mandatoryFilter));
 });
 setupTaskFilterSwipe();
 els.navMicButton.addEventListener("contextmenu", (event) => event.preventDefault());
