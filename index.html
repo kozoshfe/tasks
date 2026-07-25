@@ -19,7 +19,7 @@
     <link rel="manifest" href="manifest.json?v=36" />
     <link rel="icon" href="icon-512.png?v=27" />
     <link rel="apple-touch-icon" href="icon-192.png?v=27" />
-    <link rel="stylesheet" href="styles.css?v=64" />
+    <link rel="stylesheet" href="styles.css?v=65" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Таски" />
@@ -41,10 +41,10 @@
       <section class="content" id="tasksPanel" aria-labelledby="tasksTab">
         <div class="section-heading">
           <div class="task-filter-tabs" role="tablist" aria-label="Фільтр тасок">
-            <button class="task-filter-tab active" type="button" role="tab" data-task-filter="urgent" aria-selected="true">Термінові</button>
-            <button class="task-filter-tab" type="button" role="tab" data-task-filter="all" aria-selected="false">Всі</button>
-            <button class="task-filter-tab" type="button" role="tab" data-task-filter="buy" aria-selected="false">Купити</button>
-            <button class="task-filter-tab" type="button" role="tab" data-task-filter="laptops" aria-selected="false">Ноутбуки</button>
+            <button class="task-filter-tab active" type="button" role="tab" data-task-filter="urgent" aria-selected="true">Термінові <span class="filter-count" data-task-filter-count="urgent">0</span></button>
+            <button class="task-filter-tab" type="button" role="tab" data-task-filter="all" aria-selected="false">Всі <span class="filter-count" data-task-filter-count="all">0</span></button>
+            <button class="task-filter-tab" type="button" role="tab" data-task-filter="buy" aria-selected="false">Купити <span class="filter-count" data-task-filter-count="buy">0</span></button>
+            <button class="task-filter-tab" type="button" role="tab" data-task-filter="laptops" aria-selected="false">Ноутбуки <span class="filter-count" data-task-filter-count="laptops">0</span></button>
           </div>
         </div>
         <ul class="task-list" id="taskList"></ul>
@@ -53,8 +53,8 @@
       <section class="content" id="trashPanel" aria-labelledby="trashTab" hidden>
         <div class="section-heading">
           <div class="task-filter-tabs" role="tablist" aria-label="Обов’язкові задачі">
-            <button class="task-filter-tab active" type="button" role="tab" data-mandatory-filter="reminders" aria-selected="true">Нагадування</button>
-            <button class="task-filter-tab" type="button" role="tab" data-mandatory-filter="recurring" aria-selected="false">Повторюються</button>
+            <button class="task-filter-tab active" type="button" role="tab" data-mandatory-filter="reminders" aria-selected="true">Нагадування <span class="filter-count" data-mandatory-filter-count="reminders">0</span></button>
+            <button class="task-filter-tab" type="button" role="tab" data-mandatory-filter="recurring" aria-selected="false">Повторюються <span class="filter-count" data-mandatory-filter-count="recurring">0</span></button>
           </div>
         </div>
         <ul class="task-list" id="trashList"></ul>

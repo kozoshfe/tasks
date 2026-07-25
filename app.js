@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "85";
+const APP_VERSION = "86";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const ACCESS_STORAGE_KEY = "simple-task-pwa-access-granted";
 const ACCESS_CODE = "15057050";
@@ -47,7 +47,9 @@ const els = {
   taskModal: document.querySelector("#taskModal"),
   taskList: document.querySelector("#taskList"),
   taskFilterTabs: document.querySelectorAll("[data-task-filter]"),
+  taskFilterCounts: document.querySelectorAll("[data-task-filter-count]"),
   mandatoryFilterTabs: document.querySelectorAll("[data-mandatory-filter]"),
+  mandatoryFilterCounts: document.querySelectorAll("[data-mandatory-filter-count]"),
   appShell: document.querySelector(".app-shell"),
   tasksPanel: document.querySelector("#tasksPanel"),
   tasksTab: document.querySelector("#tasksTab"),
@@ -1177,6 +1179,20 @@ function render() {
   sortActiveTasks();
   const visibleTasks = getFilteredTasks();
   const mandatoryTasks = getMandatoryTasks();
+  const regularTasks = state.tasks.filter((task) => !task.reminderAt);
+  els.taskFilterCounts.forEach((count) => {
+    const filter = count.dataset.taskFilterCount;
+    count.textContent = regularTasks.filter((task) => {
+      const category = getTaskCategory(task);
+      return filter === "all" ? category === null : category === filter;
+    }).length;
+  });
+  els.mandatoryFilterCounts.forEach((count) => {
+    const filter = count.dataset.mandatoryFilterCount;
+    count.textContent = state.tasks.filter((task) => (
+      filter === "recurring" ? Boolean(task.recurrence) : Boolean(task.reminderAt) && !task.recurrence
+    )).length;
+  });
   els.taskList.replaceChildren(...visibleTasks.map((task) => makeTaskItem(task, "tasks")));
   els.trashList.replaceChildren(...mandatoryTasks.map((task) => makeTaskItem(task, "tasks")));
   rescheduleNativeReminders();
