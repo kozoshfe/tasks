@@ -230,7 +230,11 @@ function getFilteredTasks() {
 
 function getMandatoryTasks() {
   if (activeMandatoryFilter === "recurring") {
-    return state.tasks.filter((task) => Boolean(task.recurrence));
+    // Keep today's completed occurrences below the tasks that still need attention.
+    // The original order (including priority) stays intact within each group.
+    return state.tasks
+      .filter((task) => Boolean(task.recurrence))
+      .sort((first, second) => Number(isRecurringTaskCompletedToday(first)) - Number(isRecurringTaskCompletedToday(second)));
   }
 
   return state.tasks.filter((task) => Boolean(task.reminderAt) && !task.recurrence);
@@ -1175,10 +1179,29 @@ function makeTaskItem(task, mode) {
   return item;
 }
 
+function renderTaskList() {
+  const visibleTasks = getFilteredTasks();
+  els.taskList.replaceChildren(...visibleTasks.map((task) => makeTaskItem(task, "tasks")));
+}
+
+function renderMandatoryTaskList() {
+  const mandatoryTasks = getMandatoryTasks();
+  els.trashList.replaceChildren(...mandatoryTasks.map((task) => makeTaskItem(task, "tasks")));
+}
+
+function animateFilterChange(list, direction) {
+  if (!direction || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+  const animationClass = direction === "next" ? "filter-swipe-next" : "filter-swipe-previous";
+  list.classList.remove("filter-swipe-next", "filter-swipe-previous");
+  // Restart the animation when the user changes filters repeatedly.
+  void list.offsetWidth;
+  list.classList.add(animationClass);
+  list.addEventListener("animationend", () => list.classList.remove(animationClass), { once: true });
+}
+
 function render() {
   sortActiveTasks();
-  const visibleTasks = getFilteredTasks();
-  const mandatoryTasks = getMandatoryTasks();
   const regularTasks = state.tasks.filter((task) => !task.reminderAt);
   els.taskFilterCounts.forEach((count) => {
     const filter = count.dataset.taskFilterCount;
@@ -1193,8 +1216,8 @@ function render() {
       filter === "recurring" ? Boolean(task.recurrence) : Boolean(task.reminderAt) && !task.recurrence
     )).length;
   });
-  els.taskList.replaceChildren(...visibleTasks.map((task) => makeTaskItem(task, "tasks")));
-  els.trashList.replaceChildren(...mandatoryTasks.map((task) => makeTaskItem(task, "tasks")));
+  renderTaskList();
+  renderMandatoryTaskList();
   rescheduleNativeReminders();
 }
 
@@ -1219,24 +1242,28 @@ window.openTaskFromNotification = (taskId, attempts = 0) => {
   window.setTimeout(() => taskItem.classList.remove("notification-target"), 3000);
 };
 
-function setTaskFilter(filterName) {
+function setTaskFilter(filterName, { direction = null } = {}) {
+  if (filterName === activeTaskFilter) return;
   activeTaskFilter = filterName;
   els.taskFilterTabs.forEach((tab) => {
     const isActive = tab.dataset.taskFilter === activeTaskFilter;
     tab.classList.toggle("active", isActive);
     tab.setAttribute("aria-selected", String(isActive));
   });
-  render();
+  renderTaskList();
+  animateFilterChange(els.taskList, direction);
 }
 
-function setMandatoryFilter(filterName) {
+function setMandatoryFilter(filterName, { direction = null } = {}) {
+  if (filterName === activeMandatoryFilter) return;
   activeMandatoryFilter = filterName;
   els.mandatoryFilterTabs.forEach((tab) => {
     const isActive = tab.dataset.mandatoryFilter === activeMandatoryFilter;
     tab.classList.toggle("active", isActive);
     tab.setAttribute("aria-selected", String(isActive));
   });
-  render();
+  renderMandatoryTaskList();
+  animateFilterChange(els.trashList, direction);
 }
 
 function setupTaskFilterSwipe() {
@@ -1271,7 +1298,9 @@ function setupTaskFilterSwipe() {
 
     const currentIndex = filterOrder.indexOf(activeTaskFilter);
     const nextIndex = currentIndex + (deltaX < 0 ? 1 : -1);
-    if (nextIndex >= 0 && nextIndex < filterOrder.length) setTaskFilter(filterOrder[nextIndex]);
+    if (nextIndex >= 0 && nextIndex < filterOrder.length) {
+      setTaskFilter(filterOrder[nextIndex], { direction: deltaX < 0 ? "next" : "previous" });
+    }
   });
 
   els.appShell.addEventListener("pointercancel", () => {
@@ -1308,7 +1337,9 @@ function setupMandatoryFilterSwipe() {
 
     const currentIndex = filterOrder.indexOf(activeMandatoryFilter);
     const nextIndex = currentIndex + (deltaX < 0 ? 1 : -1);
-    if (nextIndex >= 0 && nextIndex < filterOrder.length) setMandatoryFilter(filterOrder[nextIndex]);
+    if (nextIndex >= 0 && nextIndex < filterOrder.length) {
+      setMandatoryFilter(filterOrder[nextIndex], { direction: deltaX < 0 ? "next" : "previous" });
+    }
   });
 
   els.appShell.addEventListener("pointercancel", () => {
