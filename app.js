@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "86";
+const APP_VERSION = "87";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const ACCESS_STORAGE_KEY = "simple-task-pwa-access-granted";
 const ACCESS_CODE = "15057050";
@@ -557,7 +557,9 @@ function syncAndroidWidget() {
     window.AndroidWidget?.sync?.(JSON.stringify(state.tasks.map((task) => ({
       id: String(task.id),
       title: task.title,
-      reminderAt: task.reminderAt,
+      // Send a numeric timestamp so the native widget is independent of the
+      // date string format returned by Supabase.
+      reminderAt: task.reminderAt ? new Date(task.reminderAt).getTime() : null,
       recurrence: task.recurrence,
       done: Boolean(task.done),
     }))));
