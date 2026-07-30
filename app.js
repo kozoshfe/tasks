@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "87";
+const APP_VERSION = "89";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const ACCESS_STORAGE_KEY = "simple-task-pwa-access-granted";
 const ACCESS_CODE = "15057050";
@@ -230,14 +230,21 @@ function getFilteredTasks() {
 
 function getMandatoryTasks() {
   if (activeMandatoryFilter === "recurring") {
-    // Keep today's completed occurrences below the tasks that still need attention.
-    // The original order (including priority) stays intact within each group.
+    // Keep today's completed occurrences below the tasks that still need attention,
+    // then show each group in the actual reminder-time order.
     return state.tasks
       .filter((task) => Boolean(task.recurrence))
-      .sort((first, second) => Number(isRecurringTaskCompletedToday(first)) - Number(isRecurringTaskCompletedToday(second)));
+      .sort((first, second) => (
+        Number(isRecurringTaskCompletedToday(first)) - Number(isRecurringTaskCompletedToday(second))
+        || new Date(first.reminderAt).getTime() - new Date(second.reminderAt).getTime()
+      ));
   }
 
-  return state.tasks.filter((task) => Boolean(task.reminderAt) && !task.recurrence);
+  // Reminder tasks must be listed by their scheduled time, not by the order
+  // in which they were created or by their priority.
+  return state.tasks
+    .filter((task) => Boolean(task.reminderAt) && !task.recurrence && !task.done)
+    .sort((first, second) => new Date(first.reminderAt).getTime() - new Date(second.reminderAt).getTime());
 }
 
 function applyState(nextState) {
@@ -1100,7 +1107,9 @@ function setupTaskReorder(item, task, mode) {
       clearTimeout(dragState.timer);
       item.classList.remove("pressing", "swiping");
       dragState = null;
-      openTaskTitleEditor(task);
+      // Horizontal gestures are reserved for moving between task screens.
+      // Do not open the editor when the finger finishes a swipe on a card.
+      event.preventDefault();
       return;
     }
     finishTaskDrag();
@@ -1185,6 +1194,11 @@ function makeTaskItem(task, mode) {
 
   item.addEventListener("click", (event) => {
     if (event.target.closest("button") || dragState?.active) return;
+    if (event.detail === 2) {
+      event.preventDefault();
+      openTaskTitleEditor(task);
+      return;
+    }
     if (event.detail === 3) {
       event.preventDefault();
       openPriorityPicker(task, item);
@@ -1287,16 +1301,15 @@ function setupTaskFilterSwipe() {
   const filterOrder = ["urgent", "all", "buy", "laptops"];
   const swipeThreshold = 64;
 
-  const isBlankTasksArea = (event) => {
+  const isTasksSwipeArea = (event) => {
     if (els.tasksPanel.hidden || event.pointerType !== "touch") return false;
-    if (event.target.closest("button, input, select, textarea, a, .task-item")) return false;
-
-    // The gesture is reserved for the unused space below the task card list.
-    return event.clientY >= els.tasksPanel.getBoundingClientRect().bottom;
+    // Cards are included deliberately: when the list fills the screen there
+    // is no empty area left from which to change screens.
+    return !event.target.closest("button, input, select, textarea, a");
   };
 
   els.appShell.addEventListener("pointerdown", (event) => {
-    if (!isBlankTasksArea(event)) return;
+    if (!isTasksSwipeArea(event)) return;
     taskFilterSwipe = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -1329,14 +1342,13 @@ function setupMandatoryFilterSwipe() {
   const filterOrder = ["reminders", "recurring"];
   const swipeThreshold = 64;
 
-  const isBlankMandatoryArea = (event) => {
+  const isMandatorySwipeArea = (event) => {
     if (els.trashPanel.hidden || event.pointerType !== "touch") return false;
-    if (event.target.closest("button, input, select, textarea, a, .task-item")) return false;
-    return event.clientY >= els.trashPanel.getBoundingClientRect().bottom;
+    return !event.target.closest("button, input, select, textarea, a");
   };
 
   els.appShell.addEventListener("pointerdown", (event) => {
-    if (!isBlankMandatoryArea(event)) return;
+    if (!isMandatorySwipeArea(event)) return;
     mandatoryFilterSwipe = {
       pointerId: event.pointerId,
       startX: event.clientX,
