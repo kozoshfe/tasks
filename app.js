@@ -599,7 +599,7 @@ async function addTask() {
 
 async function addTaskFromTitle(title) {
   const cleanTitle = title.trim();
-  if (!cleanTitle) return;
+  if (!cleanTitle) return false;
 
   const parsed = parseVoiceReminder(cleanTitle);
   const task = createTask(parsed.title);
@@ -607,7 +607,7 @@ async function addTaskFromTitle(title) {
   state.tasks.push(task);
   scheduleNativeReminder(task);
   render();
-  await saveState();
+  return await saveState();
 }
 
 function openTaskTitleEditor(task) {
@@ -1283,7 +1283,8 @@ window.addVoiceTaskFromWidget = async (text) => {
   for (let attempt = 0; attempt < 50 && !appDataReady; attempt += 1) {
     await new Promise((resolve) => window.setTimeout(resolve, 100));
   }
-  if (appDataReady) await addTaskFromTitle(String(text || ""));
+  if (!appDataReady) return false;
+  return await addTaskFromTitle(String(text || ""));
 };
 
 function setTaskFilter(filterName, { direction = null } = {}) {
