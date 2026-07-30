@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "90";
+const APP_VERSION = "92";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const ACCESS_STORAGE_KEY = "simple-task-pwa-access-granted";
 const ACCESS_CODE = "15057050";
@@ -75,6 +75,7 @@ let activeMandatoryFilter = "reminders";
 let taskFilterSwipe = null;
 let mandatoryFilterSwipe = null;
 let syncedTaskIds = new Set();
+let appDataReady = false;
 const state = {
   tasks: [],
   trash: [],
@@ -125,6 +126,7 @@ function ensureAppVersion() {
 async function openApp() {
   if (!ensureAppVersion()) return;
   await initDatabase();
+  appDataReady = true;
   document.body.classList.remove("access-locked");
   els.accessScreen.hidden = true;
 }
@@ -1275,6 +1277,14 @@ window.openTaskFromNotification = (taskId, attempts = 0) => {
 
 // Called by the microphone button on the Android home-screen widget.
 window.startVoiceTaskFromWidget = () => addVoiceTask();
+window.addVoiceTaskFromWidget = async (text) => {
+  // The tiny native voice window may finish loading before Supabase has
+  // restored the task list. Wait so a new voice task cannot be overwritten.
+  for (let attempt = 0; attempt < 50 && !appDataReady; attempt += 1) {
+    await new Promise((resolve) => window.setTimeout(resolve, 100));
+  }
+  if (appDataReady) await addTaskFromTitle(String(text || ""));
+};
 
 function setTaskFilter(filterName, { direction = null } = {}) {
   if (filterName === activeTaskFilter) return;
