@@ -550,6 +550,20 @@ function rescheduleNativeReminders() {
   state.tasks.forEach((task) => scheduleNativeReminder(task));
 }
 
+// The Android home-screen widget cannot access WebView storage directly.
+// Keep it supplied with the current active task list whenever the UI changes.
+function syncAndroidWidget() {
+  try {
+    window.AndroidWidget?.sync?.(JSON.stringify(state.tasks.map((task) => ({
+      id: String(task.id),
+      title: task.title,
+      reminderAt: task.reminderAt,
+      recurrence: task.recurrence,
+      done: Boolean(task.done),
+    }))));
+  } catch (_) {}
+}
+
 async function addTask() {
   const title = els.taskInput.value.trim();
   if (!title) {
@@ -1219,6 +1233,7 @@ function render() {
   renderTaskList();
   renderMandatoryTaskList();
   rescheduleNativeReminders();
+  syncAndroidWidget();
 }
 
 window.openTaskFromNotification = (taskId, attempts = 0) => {
