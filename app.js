@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "89";
+const APP_VERSION = "90";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const ACCESS_STORAGE_KEY = "simple-task-pwa-access-granted";
 const ACCESS_CODE = "15057050";
@@ -1272,6 +1272,9 @@ window.openTaskFromNotification = (taskId, attempts = 0) => {
   taskItem.classList.add("notification-target");
   window.setTimeout(() => taskItem.classList.remove("notification-target"), 3000);
 };
+
+// Called by the microphone button on the Android home-screen widget.
+window.startVoiceTaskFromWidget = () => addVoiceTask();
 
 function setTaskFilter(filterName, { direction = null } = {}) {
   if (filterName === activeTaskFilter) return;
