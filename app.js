@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "94";
+const APP_VERSION = "95";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const ACCESS_STORAGE_KEY = "simple-task-pwa-access-granted";
 const ACCESS_CODE = "15057050";
@@ -76,6 +76,8 @@ let taskFilterSwipe = null;
 let mandatoryFilterSwipe = null;
 let syncedTaskIds = new Set();
 let appDataReady = false;
+const earlyRecurringCompletionIds = new Set();
+let earlyRecurringTapState = null;
 const state = {
   tasks: [],
   trash: [],
@@ -787,8 +789,24 @@ function isRecurringTaskCompletedToday(task) {
 }
 
 function isRecurringTaskReadyToComplete(task) {
-  return Boolean(task.recurrence && task.reminderAt
-    && new Date(task.reminderAt).getTime() <= Date.now());
+  return Boolean(task.recurrence && (
+    earlyRecurringCompletionIds.has(String(task.id))
+    || (task.reminderAt && new Date(task.reminderAt).getTime() <= Date.now())
+  ));
+}
+
+function registerEarlyRecurringTap(task) {
+  const now = Date.now();
+  const id = String(task.id);
+  const isSameSequence = earlyRecurringTapState?.id === id
+    && now - earlyRecurringTapState.lastTapAt <= 900;
+  const taps = isSameSequence ? earlyRecurringTapState.taps + 1 : 1;
+  earlyRecurringTapState = { id, taps, lastTapAt: now };
+
+  if (taps < 3) return false;
+  earlyRecurringCompletionIds.add(id);
+  earlyRecurringTapState = null;
+  return true;
 }
 
 async function moveToTrash(id, { openTrash = true } = {}) {
@@ -984,6 +1002,7 @@ async function completeTask(id) {
   if (!task) return;
 
   if (task.recurrence && !isRecurringTaskReadyToComplete(task)) return;
+  earlyRecurringCompletionIds.delete(String(id));
   const nextReminderAt = getNextReminderAt(task);
   if (nextReminderAt) {
     if (isRecurringTaskCompletedToday(task)) return;
@@ -1155,7 +1174,11 @@ function makeTaskItem(task, mode) {
   checkButton.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    if (completedToday || notReadyYet) return;
+    if (completedToday) return;
+    if (notReadyYet) {
+      if (registerEarlyRecurringTap(task)) render();
+      return;
+    }
     completeTask(task.id);
   });
 
