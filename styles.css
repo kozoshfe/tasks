@@ -303,6 +303,29 @@ h2 {
   font-weight: 800;
 }
 
+.priority-editor-label {
+  margin-top: 16px;
+}
+
+.priority-editor-select {
+  width: 100%;
+  min-height: 52px;
+  margin-top: 8px;
+  padding: 0 16px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(36, 32, 28, 0.12);
+  border-radius: 16px;
+  font: inherit;
+  font-weight: 700;
+  outline: none;
+}
+
+.priority-editor-select:focus {
+  border-color: rgba(32, 166, 122, 0.6);
+  box-shadow: 0 0 0 3px rgba(32, 166, 122, 0.18);
+}
+
 .input-row {
   display: grid;
   grid-template-columns: 1fr 54px;

@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "92";
+const APP_VERSION = "93";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const ACCESS_STORAGE_KEY = "simple-task-pwa-access-granted";
 const ACCESS_CODE = "15057050";
@@ -638,6 +638,19 @@ function openTaskTitleEditor(task) {
   input.maxLength = 160;
   label.append(input);
 
+  const priorityLabel = document.createElement("label");
+  priorityLabel.className = "input-label priority-editor-label";
+  priorityLabel.textContent = "Пріоритет";
+  const prioritySelect = document.createElement("select");
+  prioritySelect.className = "priority-editor-select";
+  prioritySelect.setAttribute("aria-label", "Пріоритет таски");
+  prioritySelect.append(
+    new Option("Без пріоритету", ""),
+    ...Object.entries(PRIORITIES).map(([priority, details]) => new Option(details.label, priority)),
+  );
+  prioritySelect.value = hasPriority(task.priority) ? task.priority : "";
+  priorityLabel.append(prioritySelect);
+
   const saveButton = document.createElement("button");
   saveButton.className = "modal-submit-button";
   saveButton.type = "button";
@@ -652,6 +665,7 @@ function openTaskTitleEditor(task) {
       return;
     }
     task.title = title;
+    task.priority = hasPriority(prioritySelect.value) ? prioritySelect.value : null;
     if (isUrgentTaskTitle(title)) task.priority = "high";
     close();
     render();
@@ -659,7 +673,7 @@ function openTaskTitleEditor(task) {
   };
   saveButton.addEventListener("click", save);
   input.addEventListener("keydown", (event) => { if (event.key === "Enter") save(); });
-  card.append(heading, label, saveButton);
+  card.append(heading, label, priorityLabel, saveButton);
   backdrop.append(card);
   document.body.append(backdrop);
   window.requestAnimationFrame(() => {
