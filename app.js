@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "93";
+const APP_VERSION = "94";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const ACCESS_STORAGE_KEY = "simple-task-pwa-access-granted";
 const ACCESS_CODE = "15057050";
@@ -1268,12 +1268,12 @@ function render() {
   syncAndroidWidget();
 }
 
-window.openTaskFromNotification = (taskId, attempts = 0) => {
-  const task = state.tasks.find((item) => item.id === taskId);
-  if (!task) {
-    if (attempts < 20) window.setTimeout(() => window.openTaskFromNotification(taskId, attempts + 1), 250);
-    return;
-  }
+window.openTaskFromNotification = (taskId) => {
+  // The Android activity may finish loading this script before Supabase has
+  // restored the list. Tell native code to retry instead of losing the task ID.
+  if (!appDataReady) return false;
+  const task = state.tasks.find((item) => String(item.id) === String(taskId));
+  if (!task) return false;
 
   const isReminderTask = Boolean(task.reminderAt);
   const taskFilter = getTaskCategory(task) || "all";
@@ -1282,11 +1282,12 @@ window.openTaskFromNotification = (taskId, attempts = 0) => {
   if (isReminderTask && task.recurrence) setMandatoryFilter("recurring");
   const taskItem = (isReminderTask ? els.trashList : els.taskList)
     .querySelector(`.task-item[data-task-id="${CSS.escape(taskId)}"]`);
-  if (!taskItem) return;
+  if (!taskItem) return false;
 
   taskItem.scrollIntoView({ behavior: "smooth", block: "center" });
   taskItem.classList.add("notification-target");
   window.setTimeout(() => taskItem.classList.remove("notification-target"), 3000);
+  return true;
 };
 
 // Called by the microphone button on the Android home-screen widget.
