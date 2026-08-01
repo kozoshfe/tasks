@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "99";
+const APP_VERSION = "100";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -60,7 +60,6 @@ const els = {
   accessEmail: document.querySelector("#accessEmail"),
   accessPassword: document.querySelector("#accessPassword"),
   accessError: document.querySelector("#accessError"),
-  logoutButton: document.querySelector("#logoutButton"),
 };
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -131,23 +130,32 @@ async function openApp() {
   await initDatabase();
   appDataReady = true;
   document.body.classList.remove("access-locked");
+  document.body.classList.remove("auth-pending");
   els.accessScreen.hidden = true;
 }
 
 function showAccessScreen() {
   appDataReady = false;
   document.body.classList.add("access-locked");
+  document.body.classList.remove("auth-pending");
   els.accessScreen.hidden = false;
 }
 
 async function setupAccessGate() {
   if (!window.supabase) {
+    showAccessScreen();
     els.accessError.textContent = "Не вдалося завантажити модуль входу. Перевірте інтернет.";
     return;
   }
-  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  if (session) await openApp(); else showAccessScreen();
+  try {
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (session) await openApp(); else showAccessScreen();
+  } catch (error) {
+    console.error("Failed to restore the Supabase session:", error);
+    showAccessScreen();
+    els.accessError.textContent = "Не вдалося перевірити вхід. Спробуйте ще раз.";
+  }
 
   els.accessForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -161,7 +169,6 @@ async function setupAccessGate() {
     const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
     if (error) els.accessError.textContent = "Не вдалося увійти: " + error.message;
   });
-  els.logoutButton.addEventListener("click", () => supabaseClient.auth.signOut());
   supabaseClient.auth.onAuthStateChange(async (_event, session) => {
     if (session) await openApp(); else showAccessScreen();
   });

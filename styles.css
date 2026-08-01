@@ -43,6 +43,11 @@ body {
   background: linear-gradient(145deg, #e4f4ed, var(--bg) 48%, #f8e7df);
 }
 
+/* Do not flash the sign-in form while a saved session is being restored. */
+.auth-pending .access-screen {
+  visibility: hidden;
+}
+
 .access-card {
   width: min(100%, 380px);
   padding: 30px;
