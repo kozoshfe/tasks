@@ -53,8 +53,9 @@
       <section class="content" id="trashPanel" aria-labelledby="trashTab" hidden>
         <div class="section-heading">
           <div class="task-filter-tabs" role="tablist" aria-label="Обов’язкові задачі">
-            <button class="task-filter-tab active" type="button" role="tab" data-mandatory-filter="reminders" aria-selected="true"><span class="filter-label">Нагадування</span><span class="filter-count" data-mandatory-filter-count="reminders">0</span></button>
-            <button class="task-filter-tab" type="button" role="tab" data-mandatory-filter="recurring" aria-selected="false"><span class="filter-label">Повторюються</span><span class="filter-count" data-mandatory-filter-count="recurring">0</span></button>
+            <button class="task-filter-tab active" type="button" role="tab" data-mandatory-filter="one-time" aria-selected="true"><span class="filter-label">Разові</span><span class="filter-count" data-mandatory-filter-count="one-time">0</span></button>
+            <button class="task-filter-tab" type="button" role="tab" data-mandatory-filter="daily" aria-selected="false"><span class="filter-label">Щоденні</span><span class="filter-count" data-mandatory-filter-count="daily">0</span></button>
+            <button class="task-filter-tab" type="button" role="tab" data-mandatory-filter="other" aria-selected="false"><span class="filter-label">Інші</span><span class="filter-count" data-mandatory-filter-count="other">0</span></button>
           </div>
         </div>
         <ul class="task-list" id="trashList"></ul>
@@ -95,8 +96,10 @@
           <select class="repeat-select" id="taskRepeat" aria-label="Повторювати">
             <option value="none">Не повторювати</option>
             <option value="daily">Щодня</option>
-            <option value="weekly-monday">Щопонеділка</option>
-            <option value="monthly-20">Кожного 20 числа</option>
+            <option value="weekly-date">Щотижня в цей день</option>
+            <option value="monthly-date">Щомісяця в це число</option>
+            <option value="monthly-last-day">Щомісяця в останній день</option>
+            <option value="yearly-date">Щороку в цю дату</option>
           </select>
         </div>
         <p class="voice-status" id="voiceStatus" role="status" aria-live="polite"></p>
@@ -123,6 +126,6 @@
       </button>
     </nav>
 
-    <script src="app.js?v=95" defer></script>
+    <script src="app.js?v=97" defer></script>
   </body>
 </html>

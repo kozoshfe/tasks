@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "95";
+const APP_VERSION = "97";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const ACCESS_STORAGE_KEY = "simple-task-pwa-access-granted";
 const ACCESS_CODE = "15057050";
@@ -71,7 +71,7 @@ let dragState = null;
 let navMicTapTimer = null;
 let priorityPickerTaskId = null;
 let activeTaskFilter = "urgent";
-let activeMandatoryFilter = "reminders";
+let activeMandatoryFilter = "one-time";
 let taskFilterSwipe = null;
 let mandatoryFilterSwipe = null;
 let syncedTaskIds = new Set();
@@ -233,15 +233,21 @@ function getFilteredTasks() {
 }
 
 function getMandatoryTasks() {
-  if (activeMandatoryFilter === "recurring") {
+  if (activeMandatoryFilter === "daily") {
     // Keep today's completed occurrences below the tasks that still need attention,
     // then show each group in the actual reminder-time order.
     return state.tasks
-      .filter((task) => Boolean(task.recurrence))
+      .filter((task) => task.recurrence === "daily")
       .sort((first, second) => (
         Number(isRecurringTaskCompletedToday(first)) - Number(isRecurringTaskCompletedToday(second))
         || new Date(first.reminderAt).getTime() - new Date(second.reminderAt).getTime()
       ));
+  }
+
+  if (activeMandatoryFilter === "other") {
+    return state.tasks
+      .filter((task) => Boolean(task.recurrence) && task.recurrence !== "daily")
+      .sort((first, second) => new Date(first.reminderAt).getTime() - new Date(second.reminderAt).getTime());
   }
 
   // Reminder tasks must be listed by their scheduled time, not by the order
@@ -587,7 +593,8 @@ async function addTask() {
   const parsedTitle = parseVoiceReminder(title);
   const task = createTask(parsedTitle.title);
   task.reminderAt = parsedTitle.reminderAt || (els.newReminderEnabled.checked ? getNewReminderValue() : null);
-  task.recurrence = task.reminderAt && els.taskRepeat.value !== "none" ? els.taskRepeat.value : null;
+  task.recurrence = task.reminderAt && els.taskRepeat.value !== "none"
+    ? expandRecurrence(els.taskRepeat.value, new Date(task.reminderAt)) : null;
   state.tasks.push(task);
   scheduleNativeReminder(task);
   els.taskInput.value = "";
@@ -758,17 +765,66 @@ function closeTaskModal() {
   els.voiceStatus.textContent = "";
 }
 
+const UKRAINIAN_MONTHS_GENITIVE = [
+  "січня", "лютого", "березня", "квітня", "травня", "червня",
+  "липня", "серпня", "вересня", "жовтня", "листопада", "грудня",
+];
+
+function daysInMonth(year, month) {
+  return new Date(year, month + 1, 0).getDate();
+}
+
+function expandRecurrence(recurrence, date) {
+  if (recurrence === "weekly-date") return `weekly-${date.getDay()}`;
+  if (recurrence === "monthly-date") return `monthly-day-${date.getDate()}`;
+  if (recurrence === "yearly-date") return `yearly-${date.getMonth() + 1}-${date.getDate()}`;
+  return recurrence;
+}
+
+function normalizeRecurrenceForDate(recurrence, date) {
+  if (recurrence === "weekly-monday") return "weekly-1";
+  if (recurrence === "monthly-20") return "monthly-day-20";
+  return expandRecurrence(recurrence, date);
+}
+
+function getRecurrenceOptions(date) {
+  const weekday = new Intl.DateTimeFormat("uk-UA", { weekday: "long" }).format(date);
+  const dateLabel = `${date.getDate()} ${UKRAINIAN_MONTHS_GENITIVE[date.getMonth()]}`;
+  return [
+    ["none", "Не повторювати"],
+    ["daily", "Щодня"],
+    [`weekly-${date.getDay()}`, `Щотижня в ${weekday}`],
+    [`monthly-day-${date.getDate()}`, `Щомісяця ${date.getDate()} числа`],
+    ["monthly-last-day", "Щомісяця в останній день"],
+    [`yearly-${date.getMonth() + 1}-${date.getDate()}`, `Щороку ${dateLabel}`],
+  ];
+}
+
 function getNextReminderAt(task) {
   const now = new Date();
   const next = new Date(task.reminderAt || now);
 
   if (task.recurrence === "daily") {
     do next.setDate(next.getDate() + 1); while (next <= now);
-  } else if (task.recurrence === "weekly-monday") {
-    do next.setDate(next.getDate() + 1); while (next.getDay() !== 1 || next <= now);
-  } else if (task.recurrence === "monthly-20") {
+  } else if (/^weekly-\d$/.test(task.recurrence || "") || task.recurrence === "weekly-monday") {
+    const weekday = task.recurrence === "weekly-monday" ? 1 : Number(task.recurrence.slice(-1));
+    do next.setDate(next.getDate() + 1); while (next.getDay() !== weekday || next <= now);
+  } else if (/^monthly-day-\d{1,2}$/.test(task.recurrence || "") || task.recurrence === "monthly-20") {
+    const day = task.recurrence === "monthly-20" ? 20 : Number(task.recurrence.replace("monthly-day-", ""));
     do {
-      next.setMonth(next.getMonth() + 1, 20);
+      next.setMonth(next.getMonth() + 1, 1);
+      next.setDate(Math.min(day, daysInMonth(next.getFullYear(), next.getMonth())));
+    } while (next <= now);
+  } else if (task.recurrence === "monthly-last-day") {
+    do {
+      next.setMonth(next.getMonth() + 1, 1);
+      next.setDate(daysInMonth(next.getFullYear(), next.getMonth()));
+    } while (next <= now);
+  } else if (/^yearly-\d{1,2}-\d{1,2}$/.test(task.recurrence || "")) {
+    const [, month, day] = task.recurrence.match(/^yearly-(\d{1,2})-(\d{1,2})$/).map(Number);
+    do {
+      next.setFullYear(next.getFullYear() + 1, month - 1, 1);
+      next.setDate(Math.min(day, daysInMonth(next.getFullYear(), month - 1)));
     } while (next <= now);
   } else {
     return null;
@@ -918,13 +974,26 @@ function openPriorityPicker(task, anchor, showReminder = false) {
   const yearSelect = makeSelect("Рік", years, String(currentReminder.getFullYear()));
   const hourSelect = makeSelect("Година", hours.map((value) => [value, value]), String(currentReminder.getHours()).padStart(2, "0"));
   const minuteSelect = makeSelect("Хвилини", minutes.map((value) => [value, value]), String(Math.round(currentReminder.getMinutes() / 5) * 5 % 60).padStart(2, "0"));
-  const recurrenceSelect = makeSelect("Повторювати", [
-    ["none", "Не повторювати"],
-    ["daily", "Щодня"],
-    ["weekly-monday", "Щопонеділка"],
-    ["monthly-20", "Кожного 20 числа"],
-  ], task.recurrence || "none");
+  const recurrenceSelect = makeSelect(
+    "Повторювати",
+    getRecurrenceOptions(currentReminder),
+    normalizeRecurrenceForDate(task.recurrence || "none", currentReminder),
+  );
   recurrenceSelect.closest(".reminder-field")?.classList.add("reminder-recurrence-field");
+  const updateRecurrenceOptions = () => {
+    const selectedDate = new Date(Number(yearSelect.value), Number(monthSelect.value), Number(daySelect.value));
+    const previousValue = recurrenceSelect.value;
+    const nextValue = /^weekly-\d$/.test(previousValue) ? `weekly-${selectedDate.getDay()}`
+      : /^monthly-day-\d{1,2}$/.test(previousValue) ? `monthly-day-${selectedDate.getDate()}`
+        : /^yearly-\d{1,2}-\d{1,2}$/.test(previousValue)
+          ? `yearly-${selectedDate.getMonth() + 1}-${selectedDate.getDate()}` : previousValue;
+    recurrenceSelect.replaceChildren(...getRecurrenceOptions(selectedDate).map(([value, text]) => (
+      new Option(text, value, value === nextValue, value === nextValue)
+    )));
+  };
+  [daySelect, monthSelect, yearSelect].forEach((select) => {
+    select.addEventListener("change", updateRecurrenceOptions);
+  });
 
   const reminderActions = document.createElement("div");
   reminderActions.className = "reminder-picker-actions";
@@ -1282,7 +1351,9 @@ function render() {
   els.mandatoryFilterCounts.forEach((count) => {
     const filter = count.dataset.mandatoryFilterCount;
     count.textContent = state.tasks.filter((task) => (
-      filter === "recurring" ? Boolean(task.recurrence) : Boolean(task.reminderAt) && !task.recurrence
+      filter === "daily" ? task.recurrence === "daily"
+        : filter === "other" ? Boolean(task.recurrence) && task.recurrence !== "daily"
+          : Boolean(task.reminderAt) && !task.recurrence
     )).length;
   });
   renderTaskList();
@@ -1302,7 +1373,7 @@ window.openTaskFromNotification = (taskId) => {
   const taskFilter = getTaskCategory(task) || "all";
   setTaskFilter(taskFilter);
   switchTab(isReminderTask ? "trash" : "tasks");
-  if (isReminderTask && task.recurrence) setMandatoryFilter("recurring");
+  if (isReminderTask && task.recurrence) setMandatoryFilter(task.recurrence === "daily" ? "daily" : "other");
   const taskItem = (isReminderTask ? els.trashList : els.taskList)
     .querySelector(`.task-item[data-task-id="${CSS.escape(taskId)}"]`);
   if (!taskItem) return false;
@@ -1391,7 +1462,7 @@ function setupTaskFilterSwipe() {
 }
 
 function setupMandatoryFilterSwipe() {
-  const filterOrder = ["reminders", "recurring"];
+  const filterOrder = ["one-time", "daily", "other"];
   const swipeThreshold = 64;
 
   const isMandatorySwipeArea = (event) => {
@@ -1431,7 +1502,7 @@ function setupMandatoryFilterSwipe() {
 function switchTab(tabName) {
   const showTasks = tabName === "tasks";
   // The mandatory screen always opens on one-time reminders first.
-  if (!showTasks) setMandatoryFilter("reminders");
+  if (!showTasks) setMandatoryFilter("one-time");
   els.tasksPanel.hidden = !showTasks;
   els.trashPanel.hidden = showTasks;
   els.tasksTab.classList.toggle("active", showTasks);
