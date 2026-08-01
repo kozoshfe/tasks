@@ -550,7 +550,8 @@ input:focus {
 #tasksPanel .task-filter-tab:nth-child(4).active::after { background: #9a67be; }
 
 #trashPanel .task-filter-tabs {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* Keep all three mandatory-task categories aligned in one row. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 #trashPanel .task-filter-tab:nth-child(1) .filter-count { color: #9b5d0c; background: #fff0d7; }
