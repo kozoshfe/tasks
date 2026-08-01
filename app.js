@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "100";
+const APP_VERSION = "101";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -1106,6 +1106,21 @@ async function completeTask(id) {
   await saveState();
 }
 
+async function snoozeTask(id) {
+  const task = state.tasks.find((item) => item.id === id);
+  if (!task || !task.reminderAt) return false;
+
+  // Snoozing is relative to the moment the notification action is tapped, so
+  // an overdue reminder is still useful instead of remaining in the past.
+  cancelNativeReminder(id);
+  task.reminderAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+  task.done = false;
+  scheduleNativeReminder(task);
+  render();
+  await saveState();
+  return true;
+}
+
 function moveTaskToIndex(id, nextIndex) {
   const currentIndex = state.tasks.findIndex((task) => task.id === id);
   if (currentIndex === -1 || currentIndex === nextIndex) return false;
@@ -1394,6 +1409,20 @@ window.openTaskFromNotification = (taskId) => {
   taskItem.scrollIntoView({ behavior: "smooth", block: "center" });
   taskItem.classList.add("notification-target");
   window.setTimeout(() => taskItem.classList.remove("notification-target"), 3000);
+  return true;
+};
+
+// Android notification actions start the activity and then call this after
+// the WebView has restored the signed-in user's task list.
+window.handleNotificationAction = (taskId, action) => {
+  if (!appDataReady) return false;
+  const task = state.tasks.find((item) => String(item.id) === String(taskId));
+  if (!task) return false;
+
+  if (action === "complete") void completeTask(task.id);
+  else if (action === "snooze") void snoozeTask(task.id);
+  else return false;
+
   return true;
 };
 
