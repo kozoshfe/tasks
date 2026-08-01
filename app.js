@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "103";
+const APP_VERSION = "104";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -1435,6 +1435,7 @@ async function processNativeNotificationAction() {
     const { taskId, action } = JSON.parse(rawAction);
     if (await applyNotificationAction(taskId, action)) {
       window.AndroidNotificationActions?.clear?.();
+      window.AndroidNotificationActionCallback?.complete?.();
     }
   } catch (error) {
     console.error("Failed to apply notification action:", error);
