@@ -215,7 +215,7 @@ function sortActiveTasks() {
 function getTaskCategory(task) {
   const title = task.title.toLocaleLowerCase("uk-UA");
   const matches = [
-    ["urgent", title.indexOf("закладки")],
+    ["urgent", title.indexOf("закладк")],
     ["buy", title.indexOf("купит")],
     ["laptops", title.indexOf("ноутбук")],
   ].filter(([, index]) => index !== -1);
@@ -496,7 +496,7 @@ function formatTaskTitle(title) {
 }
 
 function isUrgentTaskTitle(title) {
-  return title.toLocaleLowerCase("uk-UA").includes("закладки");
+  return title.toLocaleLowerCase("uk-UA").includes("закладка");
 }
 
 function createTask(title) {
