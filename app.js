@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "105";
+const APP_VERSION = "107";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -189,6 +189,7 @@ function normalizeTask(task) {
       : task?.priority === "priority-low" ? "low" : task?.priority;
   return {
     ...task,
+    category: task?.category === "bookmarks" ? "bookmarks" : null,
     priority: isUrgentTaskTitle(task?.title || "") ? "high" : (hasPriority(priority) ? priority : null),
   };
 }
@@ -213,9 +214,10 @@ function sortActiveTasks() {
 }
 
 function getTaskCategory(task) {
+  if (task.category === "bookmarks") return "bookmarks";
   const title = task.title.toLocaleLowerCase("uk-UA");
   const matches = [
-    ["bookmarks", title.indexOf("закладки")],
+    ["bookmarks", title.indexOf("заклад")],
     ["buy", title.indexOf("купит")],
     ["laptops", title.indexOf("ноутбук")],
   ].filter(([, index]) => index !== -1);
@@ -302,6 +304,7 @@ function toDatabaseTask(task, isDeleted) {
     value: task.title,
     done: Boolean(task.done),
     priority: task.priority || null,
+    category: task.category || null,
     created_at: new Date(task.createdAt || Date.now()).toISOString(),
     reminder_at: task.reminderAt || null,
     recurrence: task.recurrence || null,
@@ -316,6 +319,7 @@ function fromDatabaseTask(row) {
     title: row.value,
     done: row.done,
     priority: row.priority,
+    category: row.category,
     createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
     reminderAt: row.reminder_at,
     recurrence: row.recurrence,
@@ -495,18 +499,28 @@ function formatTaskTitle(title) {
   return cleanTitle.charAt(0).toLocaleUpperCase("uk-UA") + cleanTitle.slice(1);
 }
 
+function parseTaskCategory(title) {
+  const bookmarkCommand = /(?:^|\s)закладк[аи](?=\s|$)/iu;
+  if (!bookmarkCommand.test(title)) return { title, category: null };
+
+  const cleanTitle = title.replace(bookmarkCommand, " ").replace(/\s+/g, " ").trim();
+  return { title: cleanTitle, category: "bookmarks" };
+}
+
 function isUrgentTaskTitle(title) {
   return title.toLocaleLowerCase("uk-UA").includes("терміново");
 }
 
 function createTask(title) {
-  const formattedTitle = formatTaskTitle(title);
+  const parsedCategory = parseTaskCategory(title);
+  const formattedTitle = formatTaskTitle(parsedCategory.title);
   return {
     id: crypto.randomUUID(),
     title: formattedTitle,
     done: false,
     createdAt: Date.now(),
     priority: isUrgentTaskTitle(formattedTitle) ? "high" : null,
+    category: parsedCategory.category,
     reminderAt: null,
     recurrence: null,
   };
@@ -588,6 +602,7 @@ function syncAndroidWidget() {
     window.AndroidWidget?.sync?.(JSON.stringify(state.tasks.map((task) => ({
       id: String(task.id),
       title: task.title,
+      category: task.category,
       // Send a numeric timestamp so the native widget is independent of the
       // date string format returned by Supabase.
       reminderAt: task.reminderAt ? new Date(task.reminderAt).getTime() : null,
@@ -606,6 +621,10 @@ async function addTask() {
 
   const parsedTitle = parseVoiceReminder(title);
   const task = createTask(parsedTitle.title);
+  if (!task.title) {
+    els.taskInput.focus();
+    return;
+  }
   task.reminderAt = parsedTitle.reminderAt || (els.newReminderEnabled.checked ? getNewReminderValue() : null);
   task.recurrence = task.reminderAt && els.taskRepeat.value !== "none"
     ? expandRecurrence(els.taskRepeat.value, new Date(task.reminderAt)) : null;
@@ -626,6 +645,7 @@ async function addTaskFromTitle(title) {
 
   const parsed = parseVoiceReminder(cleanTitle);
   const task = createTask(parsed.title);
+  if (!task.title) return false;
   task.reminderAt = parsed.reminderAt;
   state.tasks.push(task);
   scheduleNativeReminder(task);
