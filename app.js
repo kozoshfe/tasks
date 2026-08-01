@@ -3,10 +3,8 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "97";
+const APP_VERSION = "99";
 const APP_VERSION_KEY = "simple-task-pwa-version";
-const ACCESS_STORAGE_KEY = "simple-task-pwa-access-granted";
-const ACCESS_CODE = "15057050";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
   high: {
@@ -59,8 +57,10 @@ const els = {
   voiceStatus: document.querySelector("#voiceStatus"),
   accessScreen: document.querySelector("#accessScreen"),
   accessForm: document.querySelector("#accessForm"),
-  accessCode: document.querySelector("#accessCode"),
+  accessEmail: document.querySelector("#accessEmail"),
+  accessPassword: document.querySelector("#accessPassword"),
   accessError: document.querySelector("#accessError"),
+  logoutButton: document.querySelector("#logoutButton"),
 };
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -126,6 +126,7 @@ function ensureAppVersion() {
 }
 
 async function openApp() {
+  if (appDataReady) return;
   if (!ensureAppVersion()) return;
   await initDatabase();
   appDataReady = true;
@@ -133,42 +134,38 @@ async function openApp() {
   els.accessScreen.hidden = true;
 }
 
-function hasGrantedAccess() {
-  try {
-    return localStorage.getItem(ACCESS_STORAGE_KEY) === "true" || window.AndroidAccess?.hasAccess?.() === true;
-  } catch (_) {
-    return window.AndroidAccess?.hasAccess?.() === true;
-  }
+function showAccessScreen() {
+  appDataReady = false;
+  document.body.classList.add("access-locked");
+  els.accessScreen.hidden = false;
 }
 
-function rememberGrantedAccess() {
-  try {
-    localStorage.setItem(ACCESS_STORAGE_KEY, "true");
-  } catch (_) {}
-  window.AndroidAccess?.grant?.();
-}
-
-function setupAccessGate() {
-  if (hasGrantedAccess()) {
-    // Migrate users who previously authenticated only in WebView storage.
-    rememberGrantedAccess();
-    openApp();
+async function setupAccessGate() {
+  if (!window.supabase) {
+    els.accessError.textContent = "Не вдалося завантажити модуль входу. Перевірте інтернет.";
     return;
   }
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (session) await openApp(); else showAccessScreen();
 
-  els.accessForm.addEventListener("submit", (event) => {
+  els.accessForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (els.accessCode.value === ACCESS_CODE) {
-      rememberGrantedAccess();
-      els.accessError.textContent = "";
-      openApp();
+    const email = els.accessEmail.value.trim();
+    const password = els.accessPassword.value;
+    if (!email || !password) {
+      els.accessError.textContent = "Введіть email і пароль.";
       return;
     }
-
-    els.accessError.textContent = "Невірний код. Спробуйте ще раз.";
-    els.accessCode.select();
+    els.accessError.textContent = "";
+    const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    if (error) els.accessError.textContent = "Не вдалося увійти: " + error.message;
   });
-  els.accessCode.focus();
+  els.logoutButton.addEventListener("click", () => supabaseClient.auth.signOut());
+  supabaseClient.auth.onAuthStateChange(async (_event, session) => {
+    if (session) await openApp(); else showAccessScreen();
+  });
+  els.accessEmail.focus();
 }
 
 function normalizeState(value) {
@@ -323,10 +320,12 @@ function setSyncStatus() {
   // Sync messages stay silent in the UI.
 }
 
-function getSupabaseHeaders(extra = {}) {
+async function getSupabaseHeaders(extra = {}) {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session) throw new Error("Потрібно увійти в акаунт.");
   return {
     apikey: SUPABASE_ANON_KEY,
-    Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    Authorization: `Bearer ${session.access_token}`,
     ...extra,
   };
 }
@@ -360,7 +359,7 @@ async function saveState() {
   try {
     const response = await fetch(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?on_conflict=id`, {
       method: "POST",
-      headers: getSupabaseHeaders({
+      headers: await getSupabaseHeaders({
         "Content-Type": "application/json",
         Prefer: "resolution=merge-duplicates,return=minimal",
       }),
@@ -373,7 +372,7 @@ async function saveState() {
     if (removedIds.length) {
       const deleteResponse = await fetch(
         `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=in.(${removedIds.join(",")})`,
-        { method: "DELETE", headers: getSupabaseHeaders() },
+        { method: "DELETE", headers: await getSupabaseHeaders() },
       );
       if (!deleteResponse.ok) throw new Error(await parseSupabaseError(deleteResponse));
     }
@@ -398,12 +397,13 @@ async function loadState() {
   const legacyState = readLegacyState();
   const pendingState = readPendingState();
   let rows = null;
+  let recoveredPending = false;
 
   try {
     const response = await fetch(
       `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?select=*&order=created_at.asc`,
       {
-        headers: getSupabaseHeaders(),
+        headers: await getSupabaseHeaders(),
       },
     );
     if (!response.ok) throw new Error(await parseSupabaseError(response));
@@ -416,7 +416,7 @@ async function loadState() {
     if (completedOneOffIds.length) {
       const deleteResponse = await fetch(
         `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=in.(${completedOneOffIds.join(",")})`,
-        { method: "DELETE", headers: getSupabaseHeaders() },
+        { method: "DELETE", headers: await getSupabaseHeaders() },
       );
       if (!deleteResponse.ok) throw new Error(await parseSupabaseError(deleteResponse));
       rows = rows.filter((row) => !completedOneOffIds.includes(row.id));
@@ -431,12 +431,23 @@ async function loadState() {
   }
 
   // The shared database is the source of truth. A stale offline copy from a
-  // different browser must never overwrite the current shared task list.
+  // different browser must never overwrite the current shared task list. Keep
+  // only records missing from the database when a previous save was rejected
+  // (for example, by an outdated database constraint).
   if (rows.length) {
-    applyState({
+    const databaseState = {
       tasks: rows.filter((row) => !row.deleted_at).map(fromDatabaseTask),
       trash: rows.filter((row) => row.deleted_at).map(fromDatabaseTask),
-    });
+    };
+    if (hasTasks(pendingState)) {
+      const storedIds = new Set([...databaseState.tasks, ...databaseState.trash].map((task) => task.id));
+      const missingTasks = pendingState.tasks.filter((task) => !storedIds.has(task.id));
+      const missingTrash = pendingState.trash.filter((task) => !storedIds.has(task.id));
+      recoveredPending = missingTasks.length > 0 || missingTrash.length > 0;
+      databaseState.tasks.push(...missingTasks);
+      databaseState.trash.push(...missingTrash);
+    }
+    applyState(databaseState);
     syncedTaskIds = new Set(rows.map((row) => row.id));
     localStorage.removeItem(LEGACY_STORAGE_KEY);
     localStorage.removeItem(PENDING_STORAGE_KEY);
@@ -452,16 +463,11 @@ async function loadState() {
   }
 
   render();
+  if (recoveredPending) await saveState();
   if (!hasTasks(readPendingState())) setSyncStatus("База підключена", "success");
 }
 
 async function initDatabase() {
-  if (window.location.protocol === "file:") {
-    setSyncStatus("Локальний файл не синхронізується з базою", "neutral");
-    return;
-  }
-
-  supabaseClient = true;
   await loadState();
 }
 

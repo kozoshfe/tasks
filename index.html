@@ -5,21 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#184e77" />
     <title>Трекер завдань</title>
-    <script>
-      // Run before the stylesheet is painted so returning users never see the access form flash.
-      try {
-        if (
-          localStorage.getItem("simple-task-pwa-access-granted") === "true" ||
-          window.AndroidAccess?.hasAccess?.() === true
-        ) {
-          document.documentElement.classList.add("access-already-granted");
-        }
-      } catch (_) {}
-    </script>
     <link rel="manifest" href="manifest.json?v=36" />
     <link rel="icon" href="icon-512.png?v=27" />
     <link rel="apple-touch-icon" href="icon-192.png?v=27" />
-    <link rel="stylesheet" href="styles.css?v=73" />
+    <link rel="stylesheet" href="styles.css?v=74" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Таски" />
@@ -29,15 +19,18 @@
     <section class="access-screen" id="accessScreen" aria-labelledby="accessTitle">
       <form class="access-card" id="accessForm">
         <span class="access-lock-icon" aria-hidden="true">⌁</span>
-        <h1 id="accessTitle">Доступ до тасок</h1>
-        <p>Введіть код, щоб відкрити список завдань.</p>
-        <label class="access-label" for="accessCode">Код доступу</label>
-        <input id="accessCode" type="password" inputmode="numeric" autocomplete="one-time-code" maxlength="8" pattern="[0-9]*" placeholder="Введіть код" required />
+        <h1 id="accessTitle">Вхід у таски</h1>
+        <p>Увійдіть через свій акаунт, як у CRM.</p>
+        <label class="access-label" for="accessEmail">Email</label>
+        <input id="accessEmail" type="email" autocomplete="email" placeholder="you@example.com" required />
+        <label class="access-label" for="accessPassword">Пароль</label>
+        <input id="accessPassword" type="password" autocomplete="current-password" placeholder="Введіть пароль" required />
         <p class="access-error" id="accessError" role="alert" aria-live="polite"></p>
-        <button class="access-submit" type="submit">Відкрити</button>
+        <button class="access-submit" type="submit">Увійти</button>
       </form>
     </section>
     <main class="app-shell">
+      <button class="logout-button" id="logoutButton" type="button">Вийти</button>
       <section class="content" id="tasksPanel" aria-labelledby="tasksTab">
         <div class="section-heading">
           <div class="task-filter-tabs" role="tablist" aria-label="Фільтр тасок">
@@ -126,6 +119,6 @@
       </button>
     </nav>
 
-    <script src="app.js?v=97" defer></script>
+    <script src="app.js?v=99" defer></script>
   </body>
 </html>

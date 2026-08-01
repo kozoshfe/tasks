@@ -7,9 +7,12 @@ create table if not exists public.tasks (
   priority text check (priority in ('high', 'medium', 'low')),
   created_at timestamptz not null default now(),
   reminder_at timestamptz,
-  recurrence text check (recurrence in ('daily', 'weekly-monday', 'monthly-20')),
+  -- Recurrence rules such as monthly-day-19 and yearly-12-31 are generated
+  -- from the date selected by the user, so they must not be hard-coded here.
+  recurrence text,
   last_completed_at timestamptz,
-  deleted_at timestamptz
+  deleted_at timestamptz,
+  user_id uuid references auth.users(id) on delete cascade default auth.uid()
 );
 
 -- If the previous version of this migration was already run, rename its
@@ -59,10 +62,10 @@ drop policy if exists "tasks_insert" on public.tasks;
 drop policy if exists "tasks_update" on public.tasks;
 drop policy if exists "tasks_delete" on public.tasks;
 
-create policy "tasks_select" on public.tasks for select to anon using (true);
-create policy "tasks_insert" on public.tasks for insert to anon with check (true);
-create policy "tasks_update" on public.tasks for update to anon using (true) with check (true);
-create policy "tasks_delete" on public.tasks for delete to anon using (true);
+create policy "tasks_select" on public.tasks for select to authenticated using (user_id = auth.uid());
+create policy "tasks_insert" on public.tasks for insert to authenticated with check (user_id = auth.uid());
+create policy "tasks_update" on public.tasks for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "tasks_delete" on public.tasks for delete to authenticated using (user_id = auth.uid());
 
 -- One-off tasks are disposable: as soon as they are completed, remove their
 -- row even if an older cached version of the app sent the update.
