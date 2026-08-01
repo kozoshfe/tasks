@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "104";
+const APP_VERSION = "105";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -69,7 +69,7 @@ let shouldAutoAddVoiceResult = false;
 let dragState = null;
 let navMicTapTimer = null;
 let priorityPickerTaskId = null;
-let activeTaskFilter = "urgent";
+let activeTaskFilter = "all";
 let activeMandatoryFilter = "one-time";
 let taskFilterSwipe = null;
 let mandatoryFilterSwipe = null;
@@ -215,7 +215,7 @@ function sortActiveTasks() {
 function getTaskCategory(task) {
   const title = task.title.toLocaleLowerCase("uk-UA");
   const matches = [
-    ["urgent", title.indexOf("закладк")],
+    ["bookmarks", title.indexOf("закладки")],
     ["buy", title.indexOf("купит")],
     ["laptops", title.indexOf("ноутбук")],
   ].filter(([, index]) => index !== -1);
@@ -225,7 +225,7 @@ function getTaskCategory(task) {
     return matches[0][0];
   }
 
-  return task.priority === "high" ? "urgent" : null;
+  return null;
 }
 
 function getFilteredTasks() {
@@ -496,7 +496,7 @@ function formatTaskTitle(title) {
 }
 
 function isUrgentTaskTitle(title) {
-  return title.toLocaleLowerCase("uk-UA").includes("закладка");
+  return title.toLocaleLowerCase("uk-UA").includes("терміново");
 }
 
 function createTask(title) {
@@ -1485,7 +1485,7 @@ function setMandatoryFilter(filterName, { direction = null } = {}) {
 }
 
 function setupTaskFilterSwipe() {
-  const filterOrder = ["urgent", "all", "buy", "laptops"];
+  const filterOrder = ["all", "bookmarks", "buy", "laptops"];
   const swipeThreshold = 64;
 
   const isTasksSwipeArea = (event) => {
