@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "101";
+const APP_VERSION = "102";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -132,6 +132,7 @@ async function openApp() {
   document.body.classList.remove("access-locked");
   document.body.classList.remove("auth-pending");
   els.accessScreen.hidden = true;
+  await processNativeNotificationAction();
 }
 
 function showAccessScreen() {
@@ -1079,11 +1080,11 @@ async function removeForever(id) {
   await deleteTaskPermanently(id);
 }
 
-async function completeTask(id) {
+async function completeTask(id, { force = false } = {}) {
   const task = state.tasks.find((item) => item.id === id);
   if (!task) return;
 
-  if (task.recurrence && !isRecurringTaskReadyToComplete(task)) return;
+  if (task.recurrence && !force && !isRecurringTaskReadyToComplete(task)) return;
   earlyRecurringCompletionIds.delete(String(id));
   const nextReminderAt = getNextReminderAt(task);
   if (nextReminderAt) {
@@ -1412,17 +1413,37 @@ window.openTaskFromNotification = (taskId) => {
   return true;
 };
 
-// Android notification actions start the activity and then call this after
-// the WebView has restored the signed-in user's task list.
-window.handleNotificationAction = (taskId, action) => {
-  if (!appDataReady) return false;
+async function applyNotificationAction(taskId, action) {
   const task = state.tasks.find((item) => String(item.id) === String(taskId));
   if (!task) return false;
-
-  if (action === "complete") void completeTask(task.id);
-  else if (action === "snooze") void snoozeTask(task.id);
+  if (action === "complete") await completeTask(task.id, { force: true });
+  else if (action === "snooze") await snoozeTask(task.id);
   else return false;
+  return true;
+}
 
+async function processNativeNotificationAction() {
+  let rawAction = null;
+  try {
+    rawAction = window.AndroidNotificationActions?.peek?.();
+  } catch (_) {
+    return;
+  }
+  if (!rawAction) return;
+
+  try {
+    const { taskId, action } = JSON.parse(rawAction);
+    if (await applyNotificationAction(taskId, action)) {
+      window.AndroidNotificationActions?.clear?.();
+    }
+  } catch (error) {
+    console.error("Failed to apply notification action:", error);
+  }
+}
+
+window.handleNotificationAction = (taskId, action) => {
+  if (!appDataReady) return false;
+  void applyNotificationAction(taskId, action);
   return true;
 };
 
