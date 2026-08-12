@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "107";
+const APP_VERSION = "108";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -839,6 +839,9 @@ function getNextReminderAt(task) {
   const next = new Date(task.reminderAt || now);
 
   if (task.recurrence === "daily") {
+    if (next < now && !isSameCalendarDay(next, now)) {
+      next.setFullYear(now.getFullYear(), now.getMonth(), now.getDate());
+    }
     do next.setDate(next.getDate() + 1); while (next <= now);
   } else if (/^weekly-\d$/.test(task.recurrence || "") || task.recurrence === "weekly-monday") {
     const weekday = task.recurrence === "weekly-monday" ? 1 : Number(task.recurrence.slice(-1));
