@@ -75,6 +75,8 @@ let taskFilterSwipe = null;
 let mandatoryFilterSwipe = null;
 let syncedTaskIds = new Set();
 let appDataReady = false;
+let dailyRolloverTimer = null;
+let dailyRolloverInFlight = false;
 const earlyRecurringCompletionIds = new Set();
 let earlyRecurringTapState = null;
 const state = {
@@ -129,6 +131,7 @@ async function openApp() {
   if (!ensureAppVersion()) return;
   await initDatabase();
   appDataReady = true;
+  scheduleDailyRollover();
   document.body.classList.remove("access-locked");
   document.body.classList.remove("auth-pending");
   els.accessScreen.hidden = true;
@@ -438,7 +441,9 @@ async function loadState() {
     setSyncStatus("Не прочитано з бази", "error");
     if (hasTasks(pendingState)) applyState(pendingState);
     else if (hasTasks(legacyState)) applyState(legacyState);
+    const dailyTasksRolledOver = rollOverMissedDailyTasks();
     render();
+    if (dailyTasksRolledOver) await saveState();
     return;
   }
 
@@ -474,8 +479,9 @@ async function loadState() {
     setSyncStatus("База підключена", "success");
   }
 
+  const dailyTasksRolledOver = rollOverMissedDailyTasks();
   render();
-  if (recoveredPending) await saveState();
+  if (recoveredPending || dailyTasksRolledOver) await saveState();
   if (!hasTasks(readPendingState())) setSyncStatus("База підключена", "success");
 }
 
@@ -608,6 +614,7 @@ function syncAndroidWidget() {
       reminderAt: task.reminderAt ? new Date(task.reminderAt).getTime() : null,
       recurrence: task.recurrence,
       done: Boolean(task.done),
+      lastCompletedAt: task.lastCompletedAt || null,
     }))));
   } catch (_) {}
 }
@@ -839,9 +846,6 @@ function getNextReminderAt(task) {
   const next = new Date(task.reminderAt || now);
 
   if (task.recurrence === "daily") {
-    if (next < now && !isSameCalendarDay(next, now)) {
-      next.setFullYear(now.getFullYear(), now.getMonth(), now.getDate());
-    }
     do next.setDate(next.getDate() + 1); while (next <= now);
   } else if (/^weekly-\d$/.test(task.recurrence || "") || task.recurrence === "weekly-monday") {
     const weekday = task.recurrence === "weekly-monday" ? 1 : Number(task.recurrence.slice(-1));
@@ -874,6 +878,64 @@ function isSameCalendarDay(first, second = new Date()) {
   return first.getFullYear() === second.getFullYear()
     && first.getMonth() === second.getMonth()
     && first.getDate() === second.getDate();
+}
+
+function rollOverMissedDailyTasks(referenceDate = new Date()) {
+  const startOfToday = new Date(referenceDate);
+  startOfToday.setHours(0, 0, 0, 0);
+  const autoCompletedAt = startOfToday.getTime() - 1;
+  let changed = false;
+
+  state.tasks.forEach((task) => {
+    if (task.recurrence !== "daily" || !task.reminderAt) return;
+
+    const reminder = new Date(task.reminderAt);
+    if (Number.isNaN(reminder.getTime()) || reminder.getTime() >= startOfToday.getTime()) return;
+
+    const todayReminder = new Date(referenceDate);
+    todayReminder.setHours(
+      reminder.getHours(),
+      reminder.getMinutes(),
+      reminder.getSeconds(),
+      reminder.getMilliseconds(),
+    );
+
+    cancelNativeReminder(task.id);
+    task.reminderAt = todayReminder.toISOString();
+    task.done = false;
+    task.lastCompletedAt = autoCompletedAt;
+    earlyRecurringCompletionIds.delete(String(task.id));
+    scheduleNativeReminder(task);
+    changed = true;
+  });
+
+  return changed;
+}
+
+async function refreshDailyTasksForNewDay() {
+  if (!appDataReady || dailyRolloverInFlight) return false;
+  dailyRolloverInFlight = true;
+  try {
+    if (!rollOverMissedDailyTasks()) return false;
+    render();
+    await saveState();
+    return true;
+  } finally {
+    dailyRolloverInFlight = false;
+  }
+}
+
+function scheduleDailyRollover() {
+  if (dailyRolloverTimer) window.clearTimeout(dailyRolloverTimer);
+
+  const now = new Date();
+  const nextDay = new Date(now);
+  nextDay.setHours(24, 0, 1, 0);
+  dailyRolloverTimer = window.setTimeout(async () => {
+    dailyRolloverTimer = null;
+    await refreshDailyTasksForNewDay();
+    scheduleDailyRollover();
+  }, Math.max(1000, nextDay.getTime() - now.getTime()));
 }
 
 function isRecurringTaskCompletedToday(task) {
@@ -1688,6 +1750,11 @@ if ("serviceWorker" in navigator) {
     });
   });
 }
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) void refreshDailyTasksForNewDay();
+});
+window.addEventListener("focus", () => void refreshDailyTasksForNewDay());
 
 setupSpeechRecognition();
 setupNewReminderPicker();
