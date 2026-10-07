@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "108";
+const APP_VERSION = "114";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -66,6 +66,8 @@ const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecogni
 let supabaseClient = null;
 let recognition = null;
 let shouldAutoAddVoiceResult = false;
+let voiceTaskCategory = null;
+let modalTaskCategory = null;
 let dragState = null;
 let navMicTapTimer = null;
 let priorityPickerTaskId = null;
@@ -216,11 +218,19 @@ function sortActiveTasks() {
   state.tasks = sortTasksByPriority(state.tasks);
 }
 
+// Keep the stored bookmarks key compatible with existing Supabase rows.
+function isHabit(task) {
+  return getTaskCategory(task) === "bookmarks";
+}
+
+function isMandatoryTask(task) {
+  return Boolean(task.reminderAt) && !isHabit(task);
+}
+
 function getTaskCategory(task) {
   if (task.category === "bookmarks") return "bookmarks";
   const title = task.title.toLocaleLowerCase("uk-UA");
   const matches = [
-    ["bookmarks", title.indexOf("заклад")],
     ["buy", title.indexOf("купит")],
     ["laptops", title.indexOf("ноутбук")],
   ].filter(([, index]) => index !== -1);
@@ -234,7 +244,7 @@ function getTaskCategory(task) {
 }
 
 function getFilteredTasks() {
-  const isReminderTask = (task) => Boolean(task.reminderAt);
+  const isReminderTask = isMandatoryTask;
   return state.tasks.filter((task) => {
     if (isReminderTask(task)) return false;
     const category = getTaskCategory(task);
@@ -246,7 +256,7 @@ function getMandatoryTasks() {
   if (activeMandatoryFilter === "daily") {
     // Keep today's completed occurrences below the tasks that still need attention,
     // then show each group in the actual reminder-time order.
-    return state.tasks
+    return state.tasks.filter(isMandatoryTask)
       .filter((task) => task.recurrence === "daily")
       .sort((first, second) => (
         Number(isRecurringTaskCompletedToday(first)) - Number(isRecurringTaskCompletedToday(second))
@@ -255,14 +265,14 @@ function getMandatoryTasks() {
   }
 
   if (activeMandatoryFilter === "other") {
-    return state.tasks
+    return state.tasks.filter(isMandatoryTask)
       .filter((task) => Boolean(task.recurrence) && task.recurrence !== "daily")
       .sort((first, second) => new Date(first.reminderAt).getTime() - new Date(second.reminderAt).getTime());
   }
 
   // Reminder tasks must be listed by their scheduled time, not by the order
   // in which they were created or by their priority.
-  return state.tasks
+  return state.tasks.filter(isMandatoryTask)
     .filter((task) => Boolean(task.reminderAt) && !task.recurrence && !task.done)
     .sort((first, second) => new Date(first.reminderAt).getTime() - new Date(second.reminderAt).getTime());
 }
@@ -505,28 +515,23 @@ function formatTaskTitle(title) {
   return cleanTitle.charAt(0).toLocaleUpperCase("uk-UA") + cleanTitle.slice(1);
 }
 
-function parseTaskCategory(title) {
-  const bookmarkCommand = /(?:^|\s)закладк[аи](?=\s|$)/iu;
-  if (!bookmarkCommand.test(title)) return { title, category: null };
-
-  const cleanTitle = title.replace(bookmarkCommand, " ").replace(/\s+/g, " ").trim();
-  return { title: cleanTitle, category: "bookmarks" };
+function getCreationCategory() {
+  return activeTaskFilter === "bookmarks" && !els.tasksPanel.hidden ? "bookmarks" : null;
 }
 
 function isUrgentTaskTitle(title) {
   return title.toLocaleLowerCase("uk-UA").includes("терміново");
 }
 
-function createTask(title) {
-  const parsedCategory = parseTaskCategory(title);
-  const formattedTitle = formatTaskTitle(parsedCategory.title);
+function createTask(title, category = getCreationCategory()) {
+  const formattedTitle = formatTaskTitle(title);
   return {
     id: crypto.randomUUID(),
     title: formattedTitle,
     done: false,
     createdAt: Date.now(),
     priority: isUrgentTaskTitle(formattedTitle) ? "high" : null,
-    category: parsedCategory.category,
+    category,
     reminderAt: null,
     recurrence: null,
   };
@@ -590,6 +595,16 @@ function parseVoiceReminder(text) {
 
 function scheduleNativeReminder(task) {
   if (!task.reminderAt || !window.AndroidNotifications?.schedule) return;
+  if (isHabit(task) && window.AndroidNotifications.scheduleHabit) {
+    window.AndroidNotifications.scheduleHabit(String(task.id), task.title, new Date(task.reminderAt).getTime(), task.recurrence === "every-2-hours" ? 7200000 : 0);
+    return;
+  }
+  if (task.recurrence === "every-2-hours") {
+    if (window.AndroidNotifications.scheduleInterval) {
+      window.AndroidNotifications.scheduleInterval(String(task.id), task.title, new Date(task.reminderAt).getTime(), 7200000);
+    }
+    return;
+  }
   window.AndroidNotifications.schedule(String(task.id), task.title, new Date(task.reminderAt).getTime());
 }
 
@@ -602,10 +617,10 @@ function rescheduleNativeReminders() {
 }
 
 // The Android home-screen widget cannot access WebView storage directly.
-// Keep it supplied with the current active task list whenever the UI changes.
+// Send only ordinary tasks; habits keep their own native reminder schedule.
 function syncAndroidWidget() {
   try {
-    window.AndroidWidget?.sync?.(JSON.stringify(state.tasks.map((task) => ({
+    window.AndroidWidget?.sync?.(JSON.stringify(state.tasks.filter((task) => !isHabit(task)).map((task) => ({
       id: String(task.id),
       title: task.title,
       category: task.category,
@@ -627,7 +642,7 @@ async function addTask() {
   }
 
   const parsedTitle = parseVoiceReminder(title);
-  const task = createTask(parsedTitle.title);
+  const task = createTask(parsedTitle.title, modalTaskCategory);
   if (!task.title) {
     els.taskInput.focus();
     return;
@@ -646,12 +661,12 @@ async function addTask() {
   await saveState();
 }
 
-async function addTaskFromTitle(title) {
+async function addTaskFromTitle(title, category = getCreationCategory()) {
   const cleanTitle = title.trim();
   if (!cleanTitle) return false;
 
   const parsed = parseVoiceReminder(cleanTitle);
-  const task = createTask(parsed.title);
+  const task = createTask(parsed.title, category);
   if (!task.title) return false;
   task.reminderAt = parsed.reminderAt;
   state.tasks.push(task);
@@ -734,6 +749,7 @@ function openTaskTitleEditor(task) {
 }
 
 function openTaskModal() {
+  modalTaskCategory = getCreationCategory();
   els.taskModal.hidden = false;
   window.requestAnimationFrame(() => {
     els.taskModal.classList.add("open");
@@ -741,7 +757,8 @@ function openTaskModal() {
   });
 }
 
-function startVoiceInput({ autoAdd = false } = {}) {
+function startVoiceInput({ autoAdd = false, category = getCreationCategory() } = {}) {
+  voiceTaskCategory = category;
   if (window.AndroidSpeech?.start) {
     shouldAutoAddVoiceResult = autoAdd;
     els.voiceStatus.textContent = "Слухаю...";
@@ -767,7 +784,7 @@ window.onAndroidSpeechResult = async (text) => {
   if (!transcript) return;
   if (shouldAutoAddVoiceResult) {
     shouldAutoAddVoiceResult = false;
-    await addTaskFromTitle(transcript);
+    await addTaskFromTitle(transcript, voiceTaskCategory);
   } else {
     els.taskInput.value = transcript;
     els.taskInput.focus();
@@ -834,6 +851,7 @@ function getRecurrenceOptions(date) {
   return [
     ["none", "Не повторювати"],
     ["daily", "Щодня"],
+    ["every-2-hours", "Кожні 2 години (09:00–22:00)"],
     [`weekly-${date.getDay()}`, `Щотижня в ${weekday}`],
     [`monthly-day-${date.getDate()}`, `Щомісяця ${date.getDate()} числа`],
     ["monthly-last-day", "Щомісяця в останній день"],
@@ -845,7 +863,13 @@ function getNextReminderAt(task) {
   const now = new Date();
   const next = new Date(task.reminderAt || now);
 
-  if (task.recurrence === "daily") {
+  if (task.recurrence === "every-2-hours") {
+    const interval = 7200000;
+    next.setTime(next.getTime() + Math.max(1, Math.floor((now.getTime() - next.getTime()) / interval) + 1) * interval);
+    while (next.getHours() < 9 || next.getHours() >= 22) {
+      next.setTime(next.getTime() + interval);
+    }
+  } else if (task.recurrence === "daily") {
     do next.setDate(next.getDate() + 1); while (next <= now);
   } else if (/^weekly-\d$/.test(task.recurrence || "") || task.recurrence === "weekly-monday") {
     const weekday = task.recurrence === "weekly-monday" ? 1 : Number(task.recurrence.slice(-1));
@@ -939,7 +963,7 @@ function scheduleDailyRollover() {
 }
 
 function isRecurringTaskCompletedToday(task) {
-  return Boolean(task.recurrence && task.lastCompletedAt
+  return Boolean(task.recurrence && task.recurrence !== "every-2-hours" && task.lastCompletedAt
     && isSameCalendarDay(new Date(task.lastCompletedAt)));
 }
 
@@ -1384,7 +1408,9 @@ function makeTaskItem(task, mode) {
     meta.classList.add("task-reminder-meta");
     meta.textContent = completedToday
       ? `Виконано сьогодні · Наступне ${formatDate(task.reminderAt)}`
-      : `Нагадати ${formatDate(task.reminderAt)}`;
+      : task.recurrence === "every-2-hours"
+        ? `Кожні 2 години · 09:00–22:00 · від ${formatDate(task.reminderAt)}`
+        : `Нагадати ${formatDate(task.reminderAt)}`;
   } else if (mode === "trash") {
     meta.textContent = `Видалено ${formatDate(task.deletedAt)}`;
   } else {
@@ -1454,7 +1480,7 @@ function animateFilterChange(list, direction) {
 
 function render() {
   sortActiveTasks();
-  const regularTasks = state.tasks.filter((task) => !task.reminderAt);
+  const regularTasks = state.tasks.filter((task) => !isMandatoryTask(task));
   els.taskFilterCounts.forEach((count) => {
     const filter = count.dataset.taskFilterCount;
     count.textContent = regularTasks.filter((task) => {
@@ -1464,7 +1490,7 @@ function render() {
   });
   els.mandatoryFilterCounts.forEach((count) => {
     const filter = count.dataset.mandatoryFilterCount;
-    count.textContent = state.tasks.filter((task) => (
+    count.textContent = state.tasks.filter(isMandatoryTask).filter((task) => (
       filter === "daily" ? task.recurrence === "daily"
         : filter === "other" ? Boolean(task.recurrence) && task.recurrence !== "daily"
           : Boolean(task.reminderAt) && !task.recurrence
@@ -1483,7 +1509,7 @@ window.openTaskFromNotification = (taskId) => {
   const task = state.tasks.find((item) => String(item.id) === String(taskId));
   if (!task) return false;
 
-  const isReminderTask = Boolean(task.reminderAt);
+  const isReminderTask = isMandatoryTask(task);
   const taskFilter = getTaskCategory(task) || "all";
   setTaskFilter(taskFilter);
   switchTab(isReminderTask ? "trash" : "tasks");
@@ -1534,7 +1560,7 @@ window.handleNotificationAction = (taskId, action) => {
 };
 
 // Called by the microphone button on the Android home-screen widget.
-window.startVoiceTaskFromWidget = () => addVoiceTask();
+window.startVoiceTaskFromWidget = () => startVoiceInput({ autoAdd: true, category: null });
 window.addVoiceTaskFromWidget = async (text) => {
   // The tiny native voice window may finish loading before Supabase has
   // restored the task list. Wait so a new voice task cannot be overwritten.
@@ -1542,7 +1568,7 @@ window.addVoiceTaskFromWidget = async (text) => {
     await new Promise((resolve) => window.setTimeout(resolve, 100));
   }
   if (!appDataReady) return false;
-  return await addTaskFromTitle(String(text || ""));
+  return await addTaskFromTitle(String(text || ""), null);
 };
 
 function setTaskFilter(filterName, { direction = null } = {}) {
@@ -1684,7 +1710,7 @@ function setupSpeechRecognition() {
     if (shouldAutoAddVoiceResult && transcript) {
       shouldAutoAddVoiceResult = false;
       setSyncStatus("Додаю голосову таску...", "neutral");
-      await addTaskFromTitle(transcript);
+      await addTaskFromTitle(transcript, voiceTaskCategory);
       return;
     }
 
