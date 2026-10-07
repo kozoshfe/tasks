@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "114";
+const APP_VERSION = "116";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -61,6 +61,8 @@ const els = {
   accessPassword: document.querySelector("#accessPassword"),
   accessError: document.querySelector("#accessError"),
 };
+
+const defaultTaskRepeatOptions = Array.from(els.taskRepeat.options, (option) => [option.value, option.text]);
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let supabaseClient = null;
@@ -593,15 +595,20 @@ function parseVoiceReminder(text) {
   return { title: title || text, reminderAt: reminderDate.toISOString() };
 }
 
+function getReminderInterval(task) {
+  const match = /^every-([234])-hours$/.exec(task.recurrence || "");
+  return match ? Number(match[1]) * 3600000 : 0;
+}
+
 function scheduleNativeReminder(task) {
   if (!task.reminderAt || !window.AndroidNotifications?.schedule) return;
   if (isHabit(task) && window.AndroidNotifications.scheduleHabit) {
-    window.AndroidNotifications.scheduleHabit(String(task.id), task.title, new Date(task.reminderAt).getTime(), task.recurrence === "every-2-hours" ? 7200000 : 0);
+    window.AndroidNotifications.scheduleHabit(String(task.id), task.title, new Date(task.reminderAt).getTime(), getReminderInterval(task));
     return;
   }
-  if (task.recurrence === "every-2-hours") {
+  if (getReminderInterval(task)) {
     if (window.AndroidNotifications.scheduleInterval) {
-      window.AndroidNotifications.scheduleInterval(String(task.id), task.title, new Date(task.reminderAt).getTime(), 7200000);
+      window.AndroidNotifications.scheduleInterval(String(task.id), task.title, new Date(task.reminderAt).getTime(), getReminderInterval(task));
     }
     return;
   }
@@ -750,6 +757,8 @@ function openTaskTitleEditor(task) {
 
 function openTaskModal() {
   modalTaskCategory = getCreationCategory();
+  const options = modalTaskCategory === "bookmarks" ? getRecurrenceOptions(new Date(), true) : defaultTaskRepeatOptions;
+  fillReminderSelect(els.taskRepeat, options, "none");
   els.taskModal.hidden = false;
   window.requestAnimationFrame(() => {
     els.taskModal.classList.add("open");
@@ -845,7 +854,12 @@ function normalizeRecurrenceForDate(recurrence, date) {
   return expandRecurrence(recurrence, date);
 }
 
-function getRecurrenceOptions(date) {
+function getRecurrenceOptions(date, forHabit = false) {
+  if (forHabit) return [
+    ["none", "Не повторювати"],
+    ["daily", "Щодня"],
+    ...[2, 3, 4].map((hours) => [`every-${hours}-hours`, `Кожні ${hours} години (09:00–22:00)`]),
+  ];
   const weekday = new Intl.DateTimeFormat("uk-UA", { weekday: "long" }).format(date);
   const dateLabel = `${date.getDate()} ${UKRAINIAN_MONTHS_GENITIVE[date.getMonth()]}`;
   return [
@@ -863,8 +877,8 @@ function getNextReminderAt(task) {
   const now = new Date();
   const next = new Date(task.reminderAt || now);
 
-  if (task.recurrence === "every-2-hours") {
-    const interval = 7200000;
+  if (getReminderInterval(task)) {
+    const interval = getReminderInterval(task);
     next.setTime(next.getTime() + Math.max(1, Math.floor((now.getTime() - next.getTime()) / interval) + 1) * interval);
     while (next.getHours() < 9 || next.getHours() >= 22) {
       next.setTime(next.getTime() + interval);
@@ -963,7 +977,7 @@ function scheduleDailyRollover() {
 }
 
 function isRecurringTaskCompletedToday(task) {
-  return Boolean(task.recurrence && task.recurrence !== "every-2-hours" && task.lastCompletedAt
+  return Boolean(task.recurrence && !getReminderInterval(task) && task.lastCompletedAt
     && isSameCalendarDay(new Date(task.lastCompletedAt)));
 }
 
@@ -1099,7 +1113,7 @@ function openPriorityPicker(task, anchor, showReminder = false) {
   const minuteSelect = makeSelect("Хвилини", minutes.map((value) => [value, value]), String(Math.round(currentReminder.getMinutes() / 5) * 5 % 60).padStart(2, "0"));
   const recurrenceSelect = makeSelect(
     "Повторювати",
-    getRecurrenceOptions(currentReminder),
+    getRecurrenceOptions(currentReminder, isHabit(task)),
     normalizeRecurrenceForDate(task.recurrence || "none", currentReminder),
   );
   recurrenceSelect.closest(".reminder-field")?.classList.add("reminder-recurrence-field");
@@ -1110,7 +1124,7 @@ function openPriorityPicker(task, anchor, showReminder = false) {
       : /^monthly-day-\d{1,2}$/.test(previousValue) ? `monthly-day-${selectedDate.getDate()}`
         : /^yearly-\d{1,2}-\d{1,2}$/.test(previousValue)
           ? `yearly-${selectedDate.getMonth() + 1}-${selectedDate.getDate()}` : previousValue;
-    recurrenceSelect.replaceChildren(...getRecurrenceOptions(selectedDate).map(([value, text]) => (
+    recurrenceSelect.replaceChildren(...getRecurrenceOptions(selectedDate, isHabit(task)).map(([value, text]) => (
       new Option(text, value, value === nextValue, value === nextValue)
     )));
   };
@@ -1408,8 +1422,8 @@ function makeTaskItem(task, mode) {
     meta.classList.add("task-reminder-meta");
     meta.textContent = completedToday
       ? `Виконано сьогодні · Наступне ${formatDate(task.reminderAt)}`
-      : task.recurrence === "every-2-hours"
-        ? `Кожні 2 години · 09:00–22:00 · від ${formatDate(task.reminderAt)}`
+      : getReminderInterval(task)
+        ? `Кожні ${getReminderInterval(task) / 3600000} години · 09:00–22:00 · від ${formatDate(task.reminderAt)}`
         : `Нагадати ${formatDate(task.reminderAt)}`;
   } else if (mode === "trash") {
     meta.textContent = `Видалено ${formatDate(task.deletedAt)}`;
@@ -1596,7 +1610,7 @@ function setMandatoryFilter(filterName, { direction = null } = {}) {
 }
 
 function setupTaskFilterSwipe() {
-  const filterOrder = ["all", "bookmarks", "buy", "laptops"];
+  const filterOrder = ["all", "buy", "laptops", "bookmarks"];
   const swipeThreshold = 64;
 
   const isTasksSwipeArea = (event) => {
