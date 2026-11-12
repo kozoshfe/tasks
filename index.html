@@ -8,7 +8,7 @@
     <link rel="manifest" href="manifest.json?v=36" />
     <link rel="icon" href="icon-512.png?v=27" />
     <link rel="apple-touch-icon" href="icon-192.png?v=27" />
-    <link rel="stylesheet" href="styles.css?v=75" />
+    <link rel="stylesheet" href="styles.css?v=78" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -33,13 +33,23 @@
       <section class="content" id="tasksPanel" aria-labelledby="tasksTab">
         <div class="section-heading">
           <div class="task-filter-tabs" role="tablist" aria-label="Фільтр тасок">
-            <button class="task-filter-tab active" type="button" role="tab" data-task-filter="all" aria-selected="true"><span class="filter-label">Всі</span><span class="filter-count" data-task-filter-count="all">0</span></button>
+            <button class="task-filter-tab active" type="button" role="tab" data-task-filter="all" aria-selected="true"><span class="filter-label">Таски</span><span class="filter-count" data-task-filter-count="all">0</span></button>
+            <button class="task-filter-tab" type="button" role="tab" data-task-filter="reminders" aria-selected="false"><span class="filter-label">Память</span><span class="filter-count" data-task-filter-count="reminders">0</span></button>
             <button class="task-filter-tab" type="button" role="tab" data-task-filter="buy" aria-selected="false"><span class="filter-label">Купити</span><span class="filter-count" data-task-filter-count="buy">0</span></button>
             <button class="task-filter-tab" type="button" role="tab" data-task-filter="laptops" aria-selected="false"><span class="filter-label">Ноутбуки</span><span class="filter-count" data-task-filter-count="laptops">0</span></button>
-            <button class="task-filter-tab" type="button" role="tab" data-task-filter="bookmarks" aria-selected="false"><span class="filter-label">Звички</span><span class="filter-count" data-task-filter-count="bookmarks">0</span></button>
           </div>
         </div>
         <ul class="task-list" id="taskList"></ul>
+      </section>
+
+      <section class="content" id="habitsPanel" aria-labelledby="habitsTitle" hidden>
+        <div class="section-heading habits-heading">
+          <button class="screen-back-button" id="backFromHabitsButton" type="button">← Таски</button>
+          <h1 id="habitsTitle">Звички <span class="filter-count" id="habitsCount">0</span></h1>
+        </div>
+        <button class="screen-add-button" id="addHabitButton" type="button">+ Додати звичку</button>
+        <p class="habits-empty" id="habitsEmpty" hidden>Додай звичку, про яку хочеш отримувати нагадування.</p>
+        <ul class="task-list" id="habitsList"></ul>
       </section>
 
       <section class="content" id="trashPanel" aria-labelledby="trashTab" hidden>
@@ -60,7 +70,7 @@
           <h2 id="taskModalTitle">Нове завдання</h2>
           <button class="modal-close-button" id="closeTaskModalButton" type="button" aria-label="Закрити">×</button>
         </div>
-        <label class="input-label" for="taskInput">Що потрібно зробити?</label>
+        <label class="input-label" id="taskInputLabel" for="taskInput">Що потрібно зробити?</label>
         <div class="input-row">
           <input id="taskInput" type="text" placeholder="Наприклад: купити каву" autocomplete="off" />
           <button class="icon-button mic-button" id="micButton" type="button" aria-label="Диктувати завдання" title="Диктувати завдання">
@@ -119,6 +129,6 @@
       </button>
     </nav>
 
-    <script src="app.js?v=116" defer></script>
+    <script src="app.js?v=123" defer></script>
   </body>
 </html>

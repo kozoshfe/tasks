@@ -3,7 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "116";
+const APP_VERSION = "123";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -43,7 +43,15 @@ const els = {
   newReminderMinute: document.querySelector("#newReminderMinute"),
   taskRepeat: document.querySelector("#taskRepeat"),
   taskModal: document.querySelector("#taskModal"),
+  taskModalTitle: document.querySelector("#taskModalTitle"),
+  taskInputLabel: document.querySelector("#taskInputLabel"),
   taskList: document.querySelector("#taskList"),
+  habitsPanel: document.querySelector("#habitsPanel"),
+  habitsList: document.querySelector("#habitsList"),
+  habitsCount: document.querySelector("#habitsCount"),
+  habitsEmpty: document.querySelector("#habitsEmpty"),
+  addHabitButton: document.querySelector("#addHabitButton"),
+  backFromHabitsButton: document.querySelector("#backFromHabitsButton"),
   taskFilterTabs: document.querySelectorAll("[data-task-filter]"),
   taskFilterCounts: document.querySelectorAll("[data-task-filter-count]"),
   mandatoryFilterTabs: document.querySelectorAll("[data-mandatory-filter]"),
@@ -74,6 +82,7 @@ let dragState = null;
 let navMicTapTimer = null;
 let priorityPickerTaskId = null;
 let activeTaskFilter = "all";
+let habitsUnlockTaps = 0;
 let activeMandatoryFilter = "one-time";
 let taskFilterSwipe = null;
 let mandatoryFilterSwipe = null;
@@ -196,7 +205,9 @@ function normalizeTask(task) {
       : task?.priority === "priority-low" ? "low" : task?.priority;
   return {
     ...task,
-    category: task?.category === "bookmarks" ? "bookmarks" : null,
+    // Migrate old title-based categories once; new records store their tab.
+    category: isTaskCategory(task?.category) ? task.category : getLegacyTaskCategory(task?.title || ""),
+    ...(["bookmarks", "reminders"].includes(task?.category) ? { done: false, lastCompletedAt: null } : {}),
     priority: isUrgentTaskTitle(task?.title || "") ? "high" : (hasPriority(priority) ? priority : null),
   };
 }
@@ -222,16 +233,27 @@ function sortActiveTasks() {
 
 // Keep the stored bookmarks key compatible with existing Supabase rows.
 function isHabit(task) {
-  return getTaskCategory(task) === "bookmarks";
+  return task.category === "bookmarks";
+}
+
+function isReminderOnly(task) {
+  return isHabit(task) || task.category === "reminders";
 }
 
 function isMandatoryTask(task) {
-  return Boolean(task.reminderAt) && !isHabit(task);
+  return Boolean(task.reminderAt) && !isReminderOnly(task);
 }
 
 function getTaskCategory(task) {
-  if (task.category === "bookmarks") return "bookmarks";
-  const title = task.title.toLocaleLowerCase("uk-UA");
+  return isTaskCategory(task.category) ? task.category : "all";
+}
+
+function isTaskCategory(category) {
+  return ["all", "buy", "laptops", "reminders", "bookmarks"].includes(category);
+}
+
+function getLegacyTaskCategory(value) {
+  const title = value.toLocaleLowerCase("uk-UA");
   const matches = [
     ["buy", title.indexOf("купит")],
     ["laptops", title.indexOf("ноутбук")],
@@ -242,16 +264,18 @@ function getTaskCategory(task) {
     return matches[0][0];
   }
 
-  return null;
+  return "all";
 }
 
-function getFilteredTasks() {
-  const isReminderTask = isMandatoryTask;
+function getFilteredTasks(filter = activeTaskFilter) {
   return state.tasks.filter((task) => {
-    if (isReminderTask(task)) return false;
-    const category = getTaskCategory(task);
-    return activeTaskFilter === "all" ? category === null : category === activeTaskFilter;
+    if (isHabit(task) || isMandatoryTask(task)) return false;
+    return getTaskCategory(task) === filter;
   });
+}
+
+function getHabitsTasks() {
+  return els.habitsPanel.hidden ? [] : state.tasks.filter(isHabit);
 }
 
 function getMandatoryTasks() {
@@ -438,7 +462,7 @@ async function loadState() {
 
     // Completed one-off tasks are not kept as history in the shared table.
     const completedOneOffIds = rows
-      .filter((row) => row.done && !row.recurrence)
+      .filter((row) => row.done && !row.recurrence && !isReminderOnly(row))
       .map((row) => row.id);
     if (completedOneOffIds.length) {
       const deleteResponse = await fetch(
@@ -518,7 +542,9 @@ function formatTaskTitle(title) {
 }
 
 function getCreationCategory() {
-  return activeTaskFilter === "bookmarks" && !els.tasksPanel.hidden ? "bookmarks" : null;
+  if (!els.habitsPanel.hidden) return "bookmarks";
+  return !els.tasksPanel.hidden && ["all", "buy", "laptops", "reminders"].includes(activeTaskFilter)
+    ? activeTaskFilter : "all";
 }
 
 function isUrgentTaskTitle(title) {
@@ -533,7 +559,7 @@ function createTask(title, category = getCreationCategory()) {
     done: false,
     createdAt: Date.now(),
     priority: isUrgentTaskTitle(formattedTitle) ? "high" : null,
-    category,
+    category: isTaskCategory(category) ? category : "all",
     reminderAt: null,
     recurrence: null,
   };
@@ -602,6 +628,14 @@ function getReminderInterval(task) {
 
 function scheduleNativeReminder(task) {
   if (!task.reminderAt || !window.AndroidNotifications?.schedule) return;
+  if (task.category === "reminders") {
+    window.AndroidNotifications.scheduleReminder?.(String(task.id), task.title, new Date(task.reminderAt).getTime(), getReminderInterval(task), task.recurrence === "daily");
+    return;
+  }
+  if (isHabit(task) && task.recurrence === "daily" && window.AndroidNotifications.scheduleHabitDaily) {
+    window.AndroidNotifications.scheduleHabitDaily(String(task.id), task.title, new Date(task.reminderAt).getTime());
+    return;
+  }
   if (isHabit(task) && window.AndroidNotifications.scheduleHabit) {
     window.AndroidNotifications.scheduleHabit(String(task.id), task.title, new Date(task.reminderAt).getTime(), getReminderInterval(task));
     return;
@@ -624,10 +658,10 @@ function rescheduleNativeReminders() {
 }
 
 // The Android home-screen widget cannot access WebView storage directly.
-// Send only ordinary tasks; habits keep their own native reminder schedule.
+// Send only ordinary tasks; reminders and habits have no completion state.
 function syncAndroidWidget() {
   try {
-    window.AndroidWidget?.sync?.(JSON.stringify(state.tasks.filter((task) => !isHabit(task)).map((task) => ({
+    window.AndroidWidget?.sync?.(JSON.stringify(state.tasks.filter((task) => !isReminderOnly(task)).map((task) => ({
       id: String(task.id),
       title: task.title,
       category: task.category,
@@ -683,17 +717,20 @@ async function addTaskFromTitle(title, category = getCreationCategory()) {
 }
 
 function openTaskTitleEditor(task) {
+  const editorTitle = isHabit(task) ? "Редагувати звичку" : isReminderOnly(task) ? "Редагувати запис" : "Редагувати таску";
   const backdrop = document.createElement("div");
   backdrop.className = "modal-backdrop title-editor-backdrop";
   backdrop.setAttribute("role", "dialog");
   backdrop.setAttribute("aria-modal", "true");
-  backdrop.setAttribute("aria-label", "Редагувати назву таски");
+  backdrop.setAttribute("aria-label", editorTitle);
 
   const card = document.createElement("section");
   card.className = "composer modal-card";
   const heading = document.createElement("div");
   heading.className = "modal-heading";
-  heading.innerHTML = "<h2>Редагувати таску</h2>";
+  const headingTitle = document.createElement("h2");
+  headingTitle.textContent = editorTitle;
+  heading.append(headingTitle);
   const closeButton = document.createElement("button");
   closeButton.className = "modal-close-button";
   closeButton.type = "button";
@@ -703,7 +740,7 @@ function openTaskTitleEditor(task) {
 
   const label = document.createElement("label");
   label.className = "input-label";
-  label.textContent = "Назва таски";
+  label.textContent = "Назва";
   const input = document.createElement("input");
   input.type = "text";
   input.value = task.title;
@@ -757,8 +794,15 @@ function openTaskTitleEditor(task) {
 
 function openTaskModal() {
   modalTaskCategory = getCreationCategory();
-  const options = modalTaskCategory === "bookmarks" ? getRecurrenceOptions(new Date(), true) : defaultTaskRepeatOptions;
+  const reminderOnly = ["bookmarks", "reminders"].includes(modalTaskCategory);
+  const options = reminderOnly ? getRecurrenceOptions(new Date(), true) : defaultTaskRepeatOptions;
   fillReminderSelect(els.taskRepeat, options, "none");
+  els.taskModalTitle.textContent = modalTaskCategory === "bookmarks" ? "Нова звичка" : reminderOnly ? "Новий запис" : "Нове завдання";
+  els.taskInputLabel.textContent = modalTaskCategory === "reminders" ? "Що потрібно запам’ятати?" : reminderOnly ? "Про що нагадати?" : "Що потрібно зробити?";
+  els.taskInput.placeholder = modalTaskCategory === "bookmarks" ? "Наприклад: випити води" : reminderOnly ? "Наприклад: початок зустрічі" : "Наприклад: купити каву";
+  els.submitTaskButton.textContent = modalTaskCategory === "bookmarks" ? "Додати звичку" : reminderOnly ? "Додати запис" : "Додати таску";
+  els.newReminderEnabled.checked = reminderOnly;
+  updateNewReminderVisibility();
   els.taskModal.hidden = false;
   window.requestAnimationFrame(() => {
     els.taskModal.classList.add("open");
@@ -925,7 +969,7 @@ function rollOverMissedDailyTasks(referenceDate = new Date()) {
   let changed = false;
 
   state.tasks.forEach((task) => {
-    if (task.recurrence !== "daily" || !task.reminderAt) return;
+    if (isReminderOnly(task) || task.recurrence !== "daily" || !task.reminderAt) return;
 
     const reminder = new Date(task.reminderAt);
     if (Number.isNaN(reminder.getTime()) || reminder.getTime() >= startOfToday.getTime()) return;
@@ -977,7 +1021,7 @@ function scheduleDailyRollover() {
 }
 
 function isRecurringTaskCompletedToday(task) {
-  return Boolean(task.recurrence && !getReminderInterval(task) && task.lastCompletedAt
+  return Boolean(!isReminderOnly(task) && task.recurrence && !getReminderInterval(task) && task.lastCompletedAt
     && isSameCalendarDay(new Date(task.lastCompletedAt)));
 }
 
@@ -1113,7 +1157,7 @@ function openPriorityPicker(task, anchor, showReminder = false) {
   const minuteSelect = makeSelect("Хвилини", minutes.map((value) => [value, value]), String(Math.round(currentReminder.getMinutes() / 5) * 5 % 60).padStart(2, "0"));
   const recurrenceSelect = makeSelect(
     "Повторювати",
-    getRecurrenceOptions(currentReminder, isHabit(task)),
+    getRecurrenceOptions(currentReminder, isReminderOnly(task)),
     normalizeRecurrenceForDate(task.recurrence || "none", currentReminder),
   );
   recurrenceSelect.closest(".reminder-field")?.classList.add("reminder-recurrence-field");
@@ -1124,7 +1168,7 @@ function openPriorityPicker(task, anchor, showReminder = false) {
       : /^monthly-day-\d{1,2}$/.test(previousValue) ? `monthly-day-${selectedDate.getDate()}`
         : /^yearly-\d{1,2}-\d{1,2}$/.test(previousValue)
           ? `yearly-${selectedDate.getMonth() + 1}-${selectedDate.getDate()}` : previousValue;
-    recurrenceSelect.replaceChildren(...getRecurrenceOptions(selectedDate, isHabit(task)).map(([value, text]) => (
+    recurrenceSelect.replaceChildren(...getRecurrenceOptions(selectedDate, isReminderOnly(task)).map(([value, text]) => (
       new Option(text, value, value === nextValue, value === nextValue)
     )));
   };
@@ -1205,7 +1249,7 @@ async function removeForever(id) {
 
 async function completeTask(id, { force = false } = {}) {
   const task = state.tasks.find((item) => item.id === id);
-  if (!task) return;
+  if (!task || isReminderOnly(task)) return;
 
   if (task.recurrence && !force && !isRecurringTaskReadyToComplete(task)) return;
   earlyRecurringCompletionIds.delete(String(id));
@@ -1232,7 +1276,7 @@ async function completeTask(id, { force = false } = {}) {
 
 async function snoozeTask(id) {
   const task = state.tasks.find((item) => item.id === id);
-  if (!task || !task.reminderAt) return false;
+  if (!task || isReminderOnly(task) || !task.reminderAt) return false;
 
   // Snoozing is relative to the moment the notification action is tapped, so
   // an overdue reminder is still useful instead of remaining in the past.
@@ -1379,9 +1423,10 @@ function setupTaskReorder(item, task, mode) {
 
 function makeTaskItem(task, mode) {
   const item = document.createElement("li");
-  item.className = `task-item${task.done ? " done" : ""}`;
+  const reminderOnly = isReminderOnly(task);
+  item.className = `task-item${task.done && !reminderOnly ? " done" : ""}`;
   const completedToday = isRecurringTaskCompletedToday(task);
-  const notReadyYet = Boolean(task.recurrence && !completedToday && !isRecurringTaskReadyToComplete(task));
+  const notReadyYet = Boolean(!reminderOnly && task.recurrence && !completedToday && !isRecurringTaskReadyToComplete(task));
 
   const checkButton = document.createElement("button");
   checkButton.className = `check-button${completedToday ? " completed-today" : ""}${notReadyYet ? " not-ready-yet" : ""}`;
@@ -1424,7 +1469,9 @@ function makeTaskItem(task, mode) {
       ? `Виконано сьогодні · Наступне ${formatDate(task.reminderAt)}`
       : getReminderInterval(task)
         ? `Кожні ${getReminderInterval(task) / 3600000} години · 09:00–22:00 · від ${formatDate(task.reminderAt)}`
-        : `Нагадати ${formatDate(task.reminderAt)}`;
+        : reminderOnly && task.recurrence === "daily"
+          ? `Щодня · ${new Intl.DateTimeFormat("uk-UA", { hour: "2-digit", minute: "2-digit" }).format(new Date(task.reminderAt))}`
+          : `Нагадати ${formatDate(task.reminderAt)}`;
   } else if (mode === "trash") {
     meta.textContent = `Видалено ${formatDate(task.deletedAt)}`;
   } else {
@@ -1444,12 +1491,13 @@ function makeTaskItem(task, mode) {
     deleteButton.setAttribute("aria-label", "Видалити назавжди");
     deleteButton.addEventListener("click", () => removeForever(task.id));
     actions.append(deleteButton);
-  } else {
+  } else if (!reminderOnly) {
     actions.append(checkButton);
   }
 
   if (mode === "trash") {
-    item.append(checkButton, text, actions);
+    if (!reminderOnly) item.append(checkButton);
+    item.append(text, actions);
   } else {
     item.append(text, actions);
   }
@@ -1476,6 +1524,13 @@ function renderTaskList() {
   els.taskList.replaceChildren(...visibleTasks.map((task) => makeTaskItem(task, "tasks")));
 }
 
+function renderHabitsList() {
+  const habits = getHabitsTasks();
+  els.habitsCount.textContent = habits.length;
+  els.habitsEmpty.hidden = els.habitsPanel.hidden || habits.length > 0;
+  els.habitsList.replaceChildren(...habits.map((task) => makeTaskItem(task, "tasks")));
+}
+
 function renderMandatoryTaskList() {
   const mandatoryTasks = getMandatoryTasks();
   els.trashList.replaceChildren(...mandatoryTasks.map((task) => makeTaskItem(task, "tasks")));
@@ -1494,13 +1549,9 @@ function animateFilterChange(list, direction) {
 
 function render() {
   sortActiveTasks();
-  const regularTasks = state.tasks.filter((task) => !isMandatoryTask(task));
   els.taskFilterCounts.forEach((count) => {
     const filter = count.dataset.taskFilterCount;
-    count.textContent = regularTasks.filter((task) => {
-      const category = getTaskCategory(task);
-      return filter === "all" ? category === null : category === filter;
-    }).length;
+    count.textContent = getFilteredTasks(filter).length;
   });
   els.mandatoryFilterCounts.forEach((count) => {
     const filter = count.dataset.mandatoryFilterCount;
@@ -1511,6 +1562,7 @@ function render() {
     )).length;
   });
   renderTaskList();
+  renderHabitsList();
   renderMandatoryTaskList();
   rescheduleNativeReminders();
   syncAndroidWidget();
@@ -1523,12 +1575,20 @@ window.openTaskFromNotification = (taskId) => {
   const task = state.tasks.find((item) => String(item.id) === String(taskId));
   if (!task) return false;
 
+  // A notification must not reveal the hidden habits screen.
+  if (isHabit(task) && els.habitsPanel.hidden) {
+    setTaskFilter("all");
+    switchTab("tasks");
+    return true;
+  }
+
   const isReminderTask = isMandatoryTask(task);
-  const taskFilter = getTaskCategory(task) || "all";
-  setTaskFilter(taskFilter);
-  switchTab(isReminderTask ? "trash" : "tasks");
+  if (!isHabit(task)) {
+    setTaskFilter(getTaskCategory(task) || "all");
+    switchTab(isReminderTask ? "trash" : "tasks");
+  }
   if (isReminderTask && task.recurrence) setMandatoryFilter(task.recurrence === "daily" ? "daily" : "other");
-  const taskItem = (isReminderTask ? els.trashList : els.taskList)
+  const taskItem = (isHabit(task) ? els.habitsList : isReminderTask ? els.trashList : els.taskList)
     .querySelector(`.task-item[data-task-id="${CSS.escape(taskId)}"]`);
   if (!taskItem) return false;
 
@@ -1541,6 +1601,8 @@ window.openTaskFromNotification = (taskId) => {
 async function applyNotificationAction(taskId, action) {
   const task = state.tasks.find((item) => String(item.id) === String(taskId));
   if (!task) return false;
+  // Consume legacy actions without changing a reminder-only record.
+  if (isReminderOnly(task)) return action === "complete" || action === "snooze";
   if (action === "complete") await completeTask(task.id, { force: true });
   else if (action === "snooze") await snoozeTask(task.id);
   else return false;
@@ -1585,7 +1647,24 @@ window.addVoiceTaskFromWidget = async (text) => {
   return await addTaskFromTitle(String(text || ""), null);
 };
 
+function handleTaskFilterTap(filterName) {
+  if (filterName === "all") {
+    habitsUnlockTaps += 1;
+    if (habitsUnlockTaps === 10) {
+      habitsUnlockTaps = 0;
+      setTaskFilter("all");
+      switchTab("habits");
+      return;
+    }
+  } else {
+    habitsUnlockTaps = 0;
+  }
+  setTaskFilter(filterName);
+}
+
 function setTaskFilter(filterName, { direction = null } = {}) {
+  if (!["all", "buy", "laptops", "reminders"].includes(filterName)) return;
+  if (filterName !== "all") habitsUnlockTaps = 0;
   if (filterName === activeTaskFilter) return;
   activeTaskFilter = filterName;
   els.taskFilterTabs.forEach((tab) => {
@@ -1610,7 +1689,6 @@ function setMandatoryFilter(filterName, { direction = null } = {}) {
 }
 
 function setupTaskFilterSwipe() {
-  const filterOrder = ["all", "buy", "laptops", "bookmarks"];
   const swipeThreshold = 64;
 
   const isTasksSwipeArea = (event) => {
@@ -1638,6 +1716,7 @@ function setupTaskFilterSwipe() {
 
     if (Math.abs(deltaX) < swipeThreshold || Math.abs(deltaX) <= Math.abs(deltaY)) return;
 
+    const filterOrder = Array.from(els.taskFilterTabs).filter((tab) => !tab.hidden).map((tab) => tab.dataset.taskFilter);
     const currentIndex = filterOrder.indexOf(activeTaskFilter);
     const nextIndex = currentIndex + (deltaX < 0 ? 1 : -1);
     if (nextIndex >= 0 && nextIndex < filterOrder.length) {
@@ -1689,16 +1768,29 @@ function setupMandatoryFilterSwipe() {
 }
 
 function switchTab(tabName) {
+  habitsUnlockTaps = 0;
   const showTasks = tabName === "tasks";
+  const showHabits = tabName === "habits";
+  const showMandatory = tabName === "trash";
   // The mandatory screen always opens on one-time reminders first.
-  if (!showTasks) setMandatoryFilter("one-time");
+  if (showMandatory) setMandatoryFilter("one-time");
   els.tasksPanel.hidden = !showTasks;
-  els.trashPanel.hidden = showTasks;
-  els.tasksTab.classList.toggle("active", showTasks);
-  els.trashTab.classList.toggle("active", !showTasks);
-  els.tasksTab.setAttribute("aria-selected", String(showTasks));
-  els.trashTab.setAttribute("aria-selected", String(!showTasks));
+  els.habitsPanel.hidden = !showHabits;
+  els.trashPanel.hidden = !showMandatory;
+  els.tasksTab.classList.toggle("active", showTasks || showHabits);
+  els.trashTab.classList.toggle("active", showMandatory);
+  els.tasksTab.setAttribute("aria-selected", String(showTasks || showHabits));
+  els.trashTab.setAttribute("aria-selected", String(showMandatory));
+  renderHabitsList();
 }
+
+window.closeHabitsScreen = () => {
+  if (els.habitsPanel.hidden) return false;
+  if (!els.taskModal.hidden) closeTaskModal();
+  closePriorityPicker();
+  switchTab("tasks");
+  return true;
+};
 
 function setupSpeechRecognition() {
   if (!SpeechRecognition) {
@@ -1748,6 +1840,8 @@ function setupSpeechRecognition() {
 }
 
 els.addButton?.addEventListener("click", openTaskModal);
+els.addHabitButton.addEventListener("click", openTaskModal);
+els.backFromHabitsButton.addEventListener("click", window.closeHabitsScreen);
 els.submitTaskButton.addEventListener("click", addTask);
 els.closeTaskModalButton.addEventListener("click", closeTaskModal);
 els.taskModal.addEventListener("click", (event) => {
@@ -1771,7 +1865,7 @@ document.addEventListener("click", (event) => {
 els.tasksTab.addEventListener("click", () => switchTab("tasks"));
 els.trashTab.addEventListener("click", () => switchTab("trash"));
 els.taskFilterTabs.forEach((tab) => {
-  tab.addEventListener("click", () => setTaskFilter(tab.dataset.taskFilter));
+  tab.addEventListener("click", () => handleTaskFilterTap(tab.dataset.taskFilter));
 });
 els.mandatoryFilterTabs.forEach((tab) => {
   tab.addEventListener("click", () => setMandatoryFilter(tab.dataset.mandatoryFilter));

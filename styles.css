@@ -486,7 +486,7 @@ input:focus {
   box-shadow: 0 8px 18px rgba(16, 24, 40, 0.16);
 }
 
-/* Task filters use a compact four-column navigation, so every category remains visible. */
+/* Habits have their own hidden screen; the main navigation stays at four tabs. */
 #tasksPanel .task-filter-tabs,
 #trashPanel .task-filter-tabs {
   display: grid;
@@ -494,6 +494,55 @@ input:focus {
   width: 100%;
   gap: 0;
   overflow: visible;
+}
+
+.habits-heading {
+  justify-content: flex-start;
+}
+
+.habits-heading h1 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+#habitsCount {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: #73429b;
+  background: #f3e9ff;
+  font-size: 0.8rem;
+}
+
+#tasksPanel .task-filter-tabs {
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.6fr) minmax(0, 0.9fr) minmax(0, 1.2fr);
+}
+
+.screen-back-button {
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  color: var(--ink);
+  background: rgba(36, 32, 28, 0.06);
+  font-weight: 800;
+}
+
+.screen-add-button {
+  width: 100%;
+  min-height: 44px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  color: #176849;
+  background: #e4f5ed;
+  font-weight: 800;
+}
+
+.habits-empty {
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.5;
 }
 
 #tasksPanel .task-filter-tab,
@@ -560,14 +609,14 @@ input:focus {
   background: #ffffff;
 }
 
-#tasksPanel .task-filter-tab:nth-child(1) .filter-count { color: #314f8a; background: #edf1ff; }
-#tasksPanel .task-filter-tab:nth-child(2) .filter-count { color: #9b5d0c; background: #fff0d7; }
-#tasksPanel .task-filter-tab:nth-child(3) .filter-count { color: #176849; background: #e4f5ed; }
-#tasksPanel .task-filter-tab:nth-child(4) .filter-count { color: #73429b; background: #f3e9ff; }
-#tasksPanel .task-filter-tab:nth-child(1).active::after { background: #526fa6; }
-#tasksPanel .task-filter-tab:nth-child(2).active::after { background: #d48b27; }
-#tasksPanel .task-filter-tab:nth-child(3).active::after { background: #2b8a62; }
-#tasksPanel .task-filter-tab:nth-child(4).active::after { background: #9a67be; }
+#tasksPanel [data-task-filter="all"] .filter-count { color: #314f8a; background: #edf1ff; }
+#tasksPanel [data-task-filter="buy"] .filter-count { color: #9b5d0c; background: #fff0d7; }
+#tasksPanel [data-task-filter="laptops"] .filter-count { color: #176849; background: #e4f5ed; }
+#tasksPanel [data-task-filter="reminders"] .filter-count { color: #73429b; background: #f3e9ff; }
+#tasksPanel [data-task-filter="all"].active::after { background: #526fa6; }
+#tasksPanel [data-task-filter="buy"].active::after { background: #d48b27; }
+#tasksPanel [data-task-filter="laptops"].active::after { background: #2b8a62; }
+#tasksPanel [data-task-filter="reminders"].active::after { background: #9a67be; }
 
 #trashPanel .task-filter-tabs {
   /* Keep all three mandatory-task categories aligned in one row. */
