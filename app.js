@@ -3,7 +3,8 @@ const SUPABASE_ANON_KEY = "sb_publishable_nXxnpG6C_RO9mVqcYEt1mg_Z9Z-dpDr";
 const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
-const APP_VERSION = "123";
+const PENDING_DELETIONS_KEY = "simple-task-pwa-pending-deletions";
+const APP_VERSION = "126";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const DOUBLE_TAP_DELAY_MS = 280;
 const PRIORITIES = {
@@ -28,6 +29,11 @@ const PRIORITY_ORDER = {
 };
 
 const els = {
+  syncNotice: document.querySelector("#syncNotice"),
+  syncNoticeText: document.querySelector("#syncNoticeText"),
+  syncErrorDetails: document.querySelector("#syncErrorDetails"),
+  syncErrorText: document.querySelector("#syncErrorText"),
+  retrySyncButton: document.querySelector("#retrySyncButton"),
   addButton: document.querySelector("#addButton"),
   closeTaskModalButton: document.querySelector("#closeTaskModalButton"),
   micButton: document.querySelector("#micButton"),
@@ -86,7 +92,12 @@ let habitsUnlockTaps = 0;
 let activeMandatoryFilter = "one-time";
 let taskFilterSwipe = null;
 let mandatoryFilterSwipe = null;
-let syncedTaskIds = new Set();
+let saveStateQueue = Promise.resolve();
+let pendingSaveCount = 0;
+let syncedTaskRows = new Map();
+let stateRevision = 0;
+let sharedRefreshInFlight = false;
+let sharedRefreshTimer = null;
 let appDataReady = false;
 let dailyRolloverTimer = null;
 let dailyRolloverInFlight = false;
@@ -145,6 +156,7 @@ async function openApp() {
   await initDatabase();
   appDataReady = true;
   scheduleDailyRollover();
+  scheduleSharedRefresh();
   document.body.classList.remove("access-locked");
   document.body.classList.remove("auth-pending");
   els.accessScreen.hidden = true;
@@ -207,7 +219,7 @@ function normalizeTask(task) {
     ...task,
     // Migrate old title-based categories once; new records store their tab.
     category: isTaskCategory(task?.category) ? task.category : getLegacyTaskCategory(task?.title || ""),
-    ...(["bookmarks", "reminders"].includes(task?.category) ? { done: false, lastCompletedAt: null } : {}),
+    ...(task?.category === "bookmarks" ? { done: false, lastCompletedAt: null } : {}),
     priority: isUrgentTaskTitle(task?.title || "") ? "high" : (hasPriority(priority) ? priority : null),
   };
 }
@@ -237,7 +249,8 @@ function isHabit(task) {
 }
 
 function isReminderOnly(task) {
-  return isHabit(task) || task.category === "reminders";
+  // The legacy reminders key is now the ordinary «Память» task category.
+  return isHabit(task);
 }
 
 function isMandatoryTask(task) {
@@ -305,8 +318,9 @@ function getMandatoryTasks() {
 
 function applyState(nextState) {
   const normalized = normalizeState(nextState);
-  state.tasks = sortTasksByPriority(normalized.tasks);
-  state.trash = normalized.trash;
+  const deletedIds = readPendingDeletionIds();
+  state.tasks = sortTasksByPriority(normalized.tasks.filter((task) => !deletedIds.has(String(task.id))));
+  state.trash = normalized.trash.filter((task) => !deletedIds.has(String(task.id)));
 }
 
 function readLegacyState() {
@@ -323,6 +337,21 @@ function readPendingState() {
   } catch {
     return { tasks: [], trash: [] };
   }
+}
+
+function readPendingDeletionIds() {
+  try {
+    const ids = JSON.parse(localStorage.getItem(PENDING_DELETIONS_KEY));
+    return new Set(Array.isArray(ids) ? ids.map(String) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function queueTaskDeletion(id) {
+  const ids = readPendingDeletionIds();
+  ids.add(String(id));
+  localStorage.setItem(PENDING_DELETIONS_KEY, JSON.stringify([...ids]));
 }
 
 function hasTasks(value) {
@@ -367,8 +396,23 @@ function fromDatabaseTask(row) {
   });
 }
 
-function setSyncStatus() {
-  // Sync messages stay silent in the UI.
+function setSyncStatus(message, type, details = "") {
+  if (type === "error") {
+    els.syncNoticeText.textContent = message;
+    els.syncErrorText.textContent = details ? `${details}\nВебверсія: ${APP_VERSION}` : "";
+    els.syncErrorDetails.hidden = !details;
+    els.syncNotice.hidden = false;
+  } else if (type === "success") {
+    els.syncNotice.hidden = true;
+    els.syncErrorDetails.open = false;
+  }
+}
+
+function rememberSyncedState(snapshot) {
+  syncedTaskRows = new Map([
+    ...snapshot.tasks.map((task) => toDatabaseTask(task, false)),
+    ...snapshot.trash.map((task) => toDatabaseTask(task, true)),
+  ].map((row) => [String(row.id), JSON.stringify(row)]));
 }
 
 async function getSupabaseHeaders(extra = {}) {
@@ -391,55 +435,129 @@ async function parseSupabaseError(response) {
 }
 
 async function saveState() {
-  localStorage.setItem(PENDING_STORAGE_KEY, JSON.stringify(getStateSnapshot()));
+  stateRevision += 1;
+  // Persist before the first await so closing the WebView cannot lose a change.
+  const snapshotJson = JSON.stringify(getStateSnapshot());
+  localStorage.setItem(PENDING_STORAGE_KEY, snapshotJson);
+  pendingSaveCount += 1;
+  const save = saveStateQueue
+    .then(() => persistStateSnapshot(snapshotJson))
+    .finally(() => { pendingSaveCount -= 1; });
+  // A failed request must not block the next save or let older writes finish last.
+  saveStateQueue = save.catch(() => false);
+  return save;
+}
+
+async function persistStateSnapshot(snapshotJson) {
   setSyncStatus("Зберігаю...", "neutral");
-
-  if (!supabaseClient) {
-    console.error("Supabase client is not ready.");
-    setSyncStatus("Не підключено до бази. Збережено тимчасово.", "error");
-    return false;
-  }
-
-  const snapshot = getStateSnapshot();
+  const snapshot = normalizeState(JSON.parse(snapshotJson));
+  const deletedIds = readPendingDeletionIds();
   const rows = [
     ...snapshot.tasks.map((task) => toDatabaseTask(task, false)),
     ...snapshot.trash.map((task) => toDatabaseTask(task, true)),
-  ];
-  const currentIds = new Set(rows.map((task) => task.id));
+  ].filter((task) => !deletedIds.has(String(task.id))
+    && syncedTaskRows.get(String(task.id)) !== JSON.stringify(task));
 
   try {
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?on_conflict=id`, {
-      method: "POST",
-      headers: await getSupabaseHeaders({
-        "Content-Type": "application/json",
-        Prefer: "resolution=merge-duplicates,return=minimal",
-      }),
-      body: JSON.stringify(rows),
-    });
+    if (!supabaseClient) throw new Error("Supabase client is not ready.");
 
-    if (!response.ok) throw new Error(await parseSupabaseError(response));
-
-    const removedIds = [...syncedTaskIds].filter((id) => !currentIds.has(id));
-    if (removedIds.length) {
+    // Completion is independent of saving other rows. Keep its durable marker
+    // until the newest snapshot is acknowledged, including an empty task list.
+    if (deletedIds.size) {
       const deleteResponse = await fetch(
-        `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=in.(${removedIds.join(",")})`,
+        `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=in.(${[...deletedIds].map(encodeURIComponent).join(",")})`,
         { method: "DELETE", headers: await getSupabaseHeaders() },
       );
       if (!deleteResponse.ok) throw new Error(await parseSupabaseError(deleteResponse));
+      deletedIds.forEach((id) => syncedTaskRows.delete(id));
     }
 
-    syncedTaskIds = currentIds;
+    if (rows.length) {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?on_conflict=id`, {
+        method: "POST",
+        headers: await getSupabaseHeaders({
+          "Content-Type": "application/json",
+          Prefer: "resolution=merge-duplicates,return=minimal",
+        }),
+        body: JSON.stringify(rows),
+      });
+      if (!response.ok) throw new Error(await parseSupabaseError(response));
+      rows.forEach((row) => syncedTaskRows.set(String(row.id), JSON.stringify(row)));
+    }
   } catch (error) {
     console.error("Failed to save tasks to Supabase:", error);
-    setSyncStatus("Не збережено в базу: немає з'єднання", "error");
+    setSyncStatus("Зміни збережені на цьому пристрої, але ще не синхронізовані з іншими.", "error", error.message);
     return false;
   }
 
-  localStorage.removeItem(LEGACY_STORAGE_KEY);
-  localStorage.removeItem(PENDING_STORAGE_KEY);
+  // An older save must never erase the pending data of a newer user action.
+  if (localStorage.getItem(PENDING_STORAGE_KEY) === snapshotJson) {
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+    localStorage.removeItem(PENDING_STORAGE_KEY);
+    const remainingIds = [...readPendingDeletionIds()].filter((id) => !deletedIds.has(id));
+    if (remainingIds.length) localStorage.setItem(PENDING_DELETIONS_KEY, JSON.stringify(remainingIds));
+    else localStorage.removeItem(PENDING_DELETIONS_KEY);
+  }
   setSyncStatus("Збережено в базу", "success");
   return true;
 }
+
+async function retryPendingChanges() {
+  if (!appDataReady || pendingSaveCount > 0) return false;
+  if (localStorage.getItem(PENDING_STORAGE_KEY) === null && !readPendingDeletionIds().size) return false;
+  return saveState();
+}
+
+function isTaskEditInProgress() {
+  return !els.taskModal.hidden || Boolean(priorityPickerTaskId || dragState)
+    || Boolean(document.querySelector(".title-editor-backdrop"));
+}
+
+async function refreshSharedState() {
+  if (!appDataReady || sharedRefreshInFlight || pendingSaveCount > 0 || isTaskEditInProgress()) return false;
+  sharedRefreshInFlight = true;
+  try {
+    if (localStorage.getItem(PENDING_STORAGE_KEY) !== null || readPendingDeletionIds().size) {
+      await retryPendingChanges();
+      // Keep local notes visible if uploading them still fails.
+      if (localStorage.getItem(PENDING_STORAGE_KEY) !== null || readPendingDeletionIds().size) return false;
+    }
+    const revision = stateRevision;
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?select=*&order=created_at.asc`, {
+      headers: await getSupabaseHeaders(),
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error(await parseSupabaseError(response));
+    const rows = await response.json();
+    if (!appDataReady || revision !== stateRevision || pendingSaveCount > 0 || isTaskEditInProgress()
+      || localStorage.getItem(PENDING_STORAGE_KEY) !== null || readPendingDeletionIds().size) return false;
+    const nextState = {
+      tasks: rows.filter((row) => !row.deleted_at).map(fromDatabaseTask),
+      trash: rows.filter((row) => row.deleted_at).map(fromDatabaseTask),
+    };
+    rememberSyncedState(nextState);
+    applyState(nextState);
+    render();
+    setSyncStatus("Синхронізовано", "success");
+    return true;
+  } catch (error) {
+    console.error("Failed to refresh shared tasks:", error);
+    setSyncStatus("Не вдалося отримати зміни з інших пристроїв. Показано останній завантажений список.", "error", error.message);
+    return false;
+  } finally {
+    sharedRefreshInFlight = false;
+  }
+}
+
+function scheduleSharedRefresh() {
+  if (sharedRefreshTimer) window.clearTimeout(sharedRefreshTimer);
+  sharedRefreshTimer = window.setTimeout(async () => {
+    if (!document.hidden) await refreshSharedState();
+    scheduleSharedRefresh();
+  }, 15000);
+}
+
+window.refreshSharedState = refreshSharedState;
 
 async function loadState() {
   if (!supabaseClient) return;
@@ -447,6 +565,7 @@ async function loadState() {
 
   const legacyState = readLegacyState();
   const pendingState = readPendingState();
+  const hasPendingSnapshot = localStorage.getItem(PENDING_STORAGE_KEY) !== null;
   let rows = null;
   let recoveredPending = false;
 
@@ -464,18 +583,11 @@ async function loadState() {
     const completedOneOffIds = rows
       .filter((row) => row.done && !row.recurrence && !isReminderOnly(row))
       .map((row) => row.id);
-    if (completedOneOffIds.length) {
-      const deleteResponse = await fetch(
-        `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=in.(${completedOneOffIds.join(",")})`,
-        { method: "DELETE", headers: await getSupabaseHeaders() },
-      );
-      if (!deleteResponse.ok) throw new Error(await parseSupabaseError(deleteResponse));
-      rows = rows.filter((row) => !completedOneOffIds.includes(row.id));
-    }
+    completedOneOffIds.forEach(queueTaskDeletion);
   } catch (error) {
     console.error("Failed to load tasks from Supabase:", error);
-    setSyncStatus("Не прочитано з бази", "error");
-    if (hasTasks(pendingState)) applyState(pendingState);
+    setSyncStatus("Не вдалося завантажити список із бази. Доступні лише локальні записи.", "error", error.message);
+    if (hasPendingSnapshot) applyState(pendingState);
     else if (hasTasks(legacyState)) applyState(legacyState);
     const dailyTasksRolledOver = rollOverMissedDailyTasks();
     render();
@@ -483,15 +595,14 @@ async function loadState() {
     return;
   }
 
-  // The shared database is the source of truth. A stale offline copy from a
-  // different browser must never overwrite the current shared task list. Keep
-  // only records missing from the database when a previous save was rejected
-  // (for example, by an outdated database constraint).
+  // Merge unsaved new records without replacing existing shared rows with an
+  // older snapshot. applyState also honors locally pending completions/deletions.
   if (rows.length) {
     const databaseState = {
       tasks: rows.filter((row) => !row.deleted_at).map(fromDatabaseTask),
       trash: rows.filter((row) => row.deleted_at).map(fromDatabaseTask),
     };
+    rememberSyncedState(databaseState);
     if (hasTasks(pendingState)) {
       const storedIds = new Set([...databaseState.tasks, ...databaseState.trash].map((task) => task.id));
       const missingTasks = pendingState.tasks.filter((task) => !storedIds.has(task.id));
@@ -501,24 +612,30 @@ async function loadState() {
       databaseState.trash.push(...missingTrash);
     }
     applyState(databaseState);
-    syncedTaskIds = new Set(rows.map((row) => row.id));
     localStorage.removeItem(LEGACY_STORAGE_KEY);
-    localStorage.removeItem(PENDING_STORAGE_KEY);
-  } else if (hasTasks(legacyState)) {
-    applyState(legacyState);
-    setSyncStatus("Локальні таски готові до збереження", "neutral");
-  } else if (hasTasks(pendingState)) {
+    if (!recoveredPending && !readPendingDeletionIds().size) localStorage.removeItem(PENDING_STORAGE_KEY);
+  } else if (hasPendingSnapshot) {
+    syncedTaskRows.clear();
     applyState(pendingState);
+    recoveredPending = hasTasks(pendingState);
+    setSyncStatus("Локальні таски готові до збереження", "neutral");
+  } else if (hasTasks(legacyState)) {
+    syncedTaskRows.clear();
+    applyState(legacyState);
+    recoveredPending = true;
     setSyncStatus("Локальні таски готові до збереження", "neutral");
   } else {
+    syncedTaskRows.clear();
     applyState({ tasks: [], trash: [] });
     setSyncStatus("База підключена", "success");
   }
 
   const dailyTasksRolledOver = rollOverMissedDailyTasks();
   render();
-  if (recoveredPending || dailyTasksRolledOver) await saveState();
-  if (!hasTasks(readPendingState())) setSyncStatus("База підключена", "success");
+  if (recoveredPending || dailyTasksRolledOver || readPendingDeletionIds().size) await saveState();
+  if (localStorage.getItem(PENDING_STORAGE_KEY) === null && !readPendingDeletionIds().size) {
+    setSyncStatus("База підключена", "success");
+  }
 }
 
 async function initDatabase() {
@@ -628,10 +745,6 @@ function getReminderInterval(task) {
 
 function scheduleNativeReminder(task) {
   if (!task.reminderAt || !window.AndroidNotifications?.schedule) return;
-  if (task.category === "reminders") {
-    window.AndroidNotifications.scheduleReminder?.(String(task.id), task.title, new Date(task.reminderAt).getTime(), getReminderInterval(task), task.recurrence === "daily");
-    return;
-  }
   if (isHabit(task) && task.recurrence === "daily" && window.AndroidNotifications.scheduleHabitDaily) {
     window.AndroidNotifications.scheduleHabitDaily(String(task.id), task.title, new Date(task.reminderAt).getTime());
     return;
@@ -658,7 +771,7 @@ function rescheduleNativeReminders() {
 }
 
 // The Android home-screen widget cannot access WebView storage directly.
-// Send only ordinary tasks; reminders and habits have no completion state.
+// Send all ordinary task categories, including «Память»; habits stay separate.
 function syncAndroidWidget() {
   try {
     window.AndroidWidget?.sync?.(JSON.stringify(state.tasks.filter((task) => !isReminderOnly(task)).map((task) => ({
@@ -717,7 +830,7 @@ async function addTaskFromTitle(title, category = getCreationCategory()) {
 }
 
 function openTaskTitleEditor(task) {
-  const editorTitle = isHabit(task) ? "Редагувати звичку" : isReminderOnly(task) ? "Редагувати запис" : "Редагувати таску";
+  const editorTitle = isHabit(task) ? "Редагувати звичку" : "Редагувати таску";
   const backdrop = document.createElement("div");
   backdrop.className = "modal-backdrop title-editor-backdrop";
   backdrop.setAttribute("role", "dialog");
@@ -794,13 +907,13 @@ function openTaskTitleEditor(task) {
 
 function openTaskModal() {
   modalTaskCategory = getCreationCategory();
-  const reminderOnly = ["bookmarks", "reminders"].includes(modalTaskCategory);
+  const reminderOnly = modalTaskCategory === "bookmarks";
   const options = reminderOnly ? getRecurrenceOptions(new Date(), true) : defaultTaskRepeatOptions;
   fillReminderSelect(els.taskRepeat, options, "none");
-  els.taskModalTitle.textContent = modalTaskCategory === "bookmarks" ? "Нова звичка" : reminderOnly ? "Новий запис" : "Нове завдання";
-  els.taskInputLabel.textContent = modalTaskCategory === "reminders" ? "Що потрібно запам’ятати?" : reminderOnly ? "Про що нагадати?" : "Що потрібно зробити?";
-  els.taskInput.placeholder = modalTaskCategory === "bookmarks" ? "Наприклад: випити води" : reminderOnly ? "Наприклад: початок зустрічі" : "Наприклад: купити каву";
-  els.submitTaskButton.textContent = modalTaskCategory === "bookmarks" ? "Додати звичку" : reminderOnly ? "Додати запис" : "Додати таску";
+  els.taskModalTitle.textContent = reminderOnly ? "Нова звичка" : "Нове завдання";
+  els.taskInputLabel.textContent = reminderOnly ? "Про що нагадати?" : "Що потрібно зробити?";
+  els.taskInput.placeholder = reminderOnly ? "Наприклад: випити води" : "Наприклад: купити каву";
+  els.submitTaskButton.textContent = reminderOnly ? "Додати звичку" : "Додати таску";
   els.newReminderEnabled.checked = reminderOnly;
   updateNewReminderVisibility();
   els.taskModal.hidden = false;
@@ -1236,6 +1349,7 @@ function openPriorityPicker(task, anchor, showReminder = false) {
 }
 
 async function deleteTaskPermanently(id) {
+  queueTaskDeletion(id);
   cancelNativeReminder(id);
   state.tasks = state.tasks.filter((task) => task.id !== id);
   state.trash = state.trash.filter((task) => task.id !== id);
@@ -1268,6 +1382,7 @@ async function completeTask(id, { force = false } = {}) {
 
   // A completed task without recurrence has no next occurrence, so remove it
   // completely instead of leaving a completed row in the database.
+  queueTaskDeletion(id);
   cancelNativeReminder(id);
   state.tasks = state.tasks.filter((item) => item.id !== id);
   render();
@@ -1650,7 +1765,7 @@ window.addVoiceTaskFromWidget = async (text) => {
 function handleTaskFilterTap(filterName) {
   if (filterName === "all") {
     habitsUnlockTaps += 1;
-    if (habitsUnlockTaps === 10) {
+    if (habitsUnlockTaps === 3) {
       habitsUnlockTaps = 0;
       setTaskFilter("all");
       switchTab("habits");
@@ -1840,6 +1955,11 @@ function setupSpeechRecognition() {
 }
 
 els.addButton?.addEventListener("click", openTaskModal);
+els.retrySyncButton.addEventListener("click", async () => {
+  els.retrySyncButton.disabled = true;
+  try { await refreshSharedState(); }
+  finally { els.retrySyncButton.disabled = false; }
+});
 els.addHabitButton.addEventListener("click", openTaskModal);
 els.backFromHabitsButton.addEventListener("click", window.closeHabitsScreen);
 els.submitTaskButton.addEventListener("click", addTask);
@@ -1886,9 +2006,16 @@ if ("serviceWorker" in navigator) {
 }
 
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) void refreshDailyTasksForNewDay();
+  if (!document.hidden) {
+    void refreshDailyTasksForNewDay();
+    void refreshSharedState();
+  }
 });
-window.addEventListener("focus", () => void refreshDailyTasksForNewDay());
+window.addEventListener("focus", () => {
+  void refreshDailyTasksForNewDay();
+  void refreshSharedState();
+});
+window.addEventListener("online", () => void refreshSharedState());
 
 setupSpeechRecognition();
 setupNewReminderPicker();
