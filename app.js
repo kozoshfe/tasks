@@ -4,7 +4,7 @@ const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
 const PENDING_DELETIONS_KEY = "simple-task-pwa-pending-deletions";
-const APP_VERSION = "129";
+const APP_VERSION = "130";
 const APP_VERSION_KEY = "simple-task-pwa-version";
 const VOICE_HOLD_DELAY_MS = 3000;
 const PRIORITIES = {
@@ -827,6 +827,23 @@ async function addTaskFromTitle(title, category = getCreationCategory()) {
   scheduleNativeReminder(task);
   render();
   return await saveState();
+}
+
+function updateModalViewport() {
+  // The keyboard can shrink/pan the visual viewport without changing 100dvh.
+  const viewport = window.visualViewport;
+  const style = document.documentElement.style;
+  style.setProperty("--modal-viewport-height", `${viewport?.height || window.innerHeight}px`);
+  style.setProperty("--modal-viewport-width", `${viewport?.width || window.innerWidth}px`);
+  style.setProperty("--modal-viewport-top", `${viewport?.offsetTop || 0}px`);
+  style.setProperty("--modal-viewport-left", `${viewport?.offsetLeft || 0}px`);
+}
+
+function setupModalViewport() {
+  updateModalViewport();
+  window.addEventListener("resize", updateModalViewport);
+  window.visualViewport?.addEventListener("resize", updateModalViewport);
+  window.visualViewport?.addEventListener("scroll", updateModalViewport);
 }
 
 function openTaskTitleEditor(task) {
@@ -2084,6 +2101,7 @@ window.addEventListener("focus", () => {
 });
 window.addEventListener("online", () => void refreshSharedState());
 
+setupModalViewport();
 setupSpeechRecognition();
 setupNewReminderPicker();
 els.newReminderEnabled.addEventListener("change", updateNewReminderVisibility);

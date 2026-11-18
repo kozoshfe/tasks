@@ -290,13 +290,19 @@ h2 {
 }
 
 .modal-backdrop {
+  --modal-edge-gap: 18px;
   position: fixed;
-  inset: 0;
+  top: var(--modal-viewport-top, 0px);
+  left: var(--modal-viewport-left, 0px);
+  width: var(--modal-viewport-width, 100%);
+  height: var(--modal-viewport-height, 100dvh);
   z-index: 40;
   display: grid;
+  grid-template-rows: minmax(0, 1fr);
   align-items: end;
-  padding: 18px;
-  padding-bottom: calc(18px + env(safe-area-inset-bottom));
+  padding: var(--modal-edge-gap);
+  padding-top: calc(var(--modal-edge-gap) + env(safe-area-inset-top));
+  padding-bottom: calc(var(--modal-edge-gap) + env(safe-area-inset-bottom));
   background: rgba(24, 23, 22, 0.28);
   backdrop-filter: blur(10px);
   overflow-y: auto;
@@ -305,9 +311,12 @@ h2 {
 
 .modal-card {
   width: min(560px, 100%);
-  max-height: calc(100dvh - 36px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  min-height: 0;
+  max-height: 100%;
   margin: 0 auto;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding-block: 18px;
   transform: translateY(14px);
   opacity: 0;
   transition: transform 180ms ease, opacity 180ms ease;
@@ -1205,8 +1214,7 @@ input:focus {
 
 @media (max-width: 340px) {
   .modal-backdrop {
-    padding: 10px;
-    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    --modal-edge-gap: 10px;
   }
 
   .composer {
