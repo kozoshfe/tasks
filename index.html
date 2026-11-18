@@ -8,7 +8,7 @@
     <link rel="manifest" href="manifest.json?v=36" />
     <link rel="icon" href="icon-512.png?v=27" />
     <link rel="apple-touch-icon" href="icon-192.png?v=27" />
-    <link rel="stylesheet" href="styles.css?v=79" />
+    <link rel="stylesheet" href="styles.css?v=81" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -79,17 +79,7 @@
           <button class="modal-close-button" id="closeTaskModalButton" type="button" aria-label="Закрити">×</button>
         </div>
         <label class="input-label" id="taskInputLabel" for="taskInput">Що потрібно зробити?</label>
-        <div class="input-row">
-          <input id="taskInput" type="text" placeholder="Наприклад: купити каву" autocomplete="off" />
-          <button class="icon-button mic-button" id="micButton" type="button" aria-label="Диктувати завдання" title="Диктувати завдання">
-            <svg aria-hidden="true" viewBox="0 0 24 24">
-              <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z" />
-              <path d="M19 11a7 7 0 0 1-14 0" />
-              <path d="M12 18v3" />
-              <path d="M8 21h8" />
-            </svg>
-          </button>
-        </div>
+        <input id="taskInput" type="text" placeholder="Наприклад: купити каву" autocomplete="off" />
         <label class="reminder-toggle" for="newReminderEnabled">
           <input id="newReminderEnabled" type="checkbox" />
           Додати нагадування
@@ -123,8 +113,11 @@
         <span class="tab-icon" aria-hidden="true">✓</span>
         <span>Таски</span>
       </button>
-      <button class="nav-mic-button" id="navMicButton" type="button" aria-label="Додати голосом. Подвійний тап для ручного вводу" title="Додати голосом. Подвійний тап для ручного вводу">
-        <svg aria-hidden="true" viewBox="0 0 24 24">
+      <button class="nav-add-button" id="navAddButton" type="button" aria-label="Додати таску. Утримуйте 3 секунди для голосового введення" title="Додати таску. Утримуйте 3 секунди для голосового введення">
+        <svg class="nav-add-icon" aria-hidden="true" viewBox="0 0 24 24">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+        <svg class="nav-voice-icon" aria-hidden="true" viewBox="0 0 24 24">
           <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z" />
           <path d="M19 11a7 7 0 0 1-14 0" />
           <path d="M12 18v3" />
@@ -137,6 +130,6 @@
       </button>
     </nav>
 
-    <script src="app.js?v=126" defer></script>
+    <script src="app.js?v=129" defer></script>
   </body>
 </html>

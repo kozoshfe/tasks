@@ -4,9 +4,9 @@ const SUPABASE_TABLE = "tasks";
 const LEGACY_STORAGE_KEY = "simple-task-pwa-state";
 const PENDING_STORAGE_KEY = "simple-task-pwa-pending-state";
 const PENDING_DELETIONS_KEY = "simple-task-pwa-pending-deletions";
-const APP_VERSION = "126";
+const APP_VERSION = "129";
 const APP_VERSION_KEY = "simple-task-pwa-version";
-const DOUBLE_TAP_DELAY_MS = 280;
+const VOICE_HOLD_DELAY_MS = 3000;
 const PRIORITIES = {
   high: {
     label: "Високий",
@@ -36,8 +36,7 @@ const els = {
   retrySyncButton: document.querySelector("#retrySyncButton"),
   addButton: document.querySelector("#addButton"),
   closeTaskModalButton: document.querySelector("#closeTaskModalButton"),
-  micButton: document.querySelector("#micButton"),
-  navMicButton: document.querySelector("#navMicButton"),
+  navAddButton: document.querySelector("#navAddButton"),
   submitTaskButton: document.querySelector("#submitTaskButton"),
   taskInput: document.querySelector("#taskInput"),
   taskReminder: document.querySelector("#taskReminder"),
@@ -85,7 +84,8 @@ let shouldAutoAddVoiceResult = false;
 let voiceTaskCategory = null;
 let modalTaskCategory = null;
 let dragState = null;
-let navMicTapTimer = null;
+let navAddPress = null;
+let suppressNavAddClick = false;
 let priorityPickerTaskId = null;
 let activeTaskFilter = "all";
 let habitsUnlockTaps = 0;
@@ -873,6 +873,22 @@ function openTaskTitleEditor(task) {
   prioritySelect.value = hasPriority(task.priority) ? task.priority : "";
   priorityLabel.append(prioritySelect);
 
+  let categorySelect = null;
+  let categoryLabel = null;
+  if (!els.tasksPanel.hidden && !isHabit(task)) {
+    categoryLabel = document.createElement("label");
+    categoryLabel.className = "input-label category-editor-label";
+    categoryLabel.textContent = "Вкладка";
+    categorySelect = document.createElement("select");
+    categorySelect.className = "category-editor-select";
+    categorySelect.setAttribute("aria-label", "Вкладка таски");
+    categorySelect.append(...Array.from(els.taskFilterTabs)
+      .filter((tab) => !tab.hidden && isTaskCategory(tab.dataset.taskFilter) && tab.dataset.taskFilter !== "bookmarks")
+      .map((tab) => new Option(tab.querySelector(".filter-label").textContent.trim(), tab.dataset.taskFilter)));
+    categorySelect.value = getTaskCategory(task);
+    categoryLabel.append(categorySelect);
+  }
+
   const saveButton = document.createElement("button");
   saveButton.className = "modal-submit-button";
   saveButton.type = "button";
@@ -889,13 +905,16 @@ function openTaskTitleEditor(task) {
     task.title = title;
     task.priority = hasPriority(prioritySelect.value) ? prioritySelect.value : null;
     if (isUrgentTaskTitle(title)) task.priority = "high";
+    if (categorySelect?.value) task.category = categorySelect.value;
     close();
     render();
     await saveState();
   };
   saveButton.addEventListener("click", save);
   input.addEventListener("keydown", (event) => { if (event.key === "Enter") save(); });
-  card.append(heading, label, priorityLabel, saveButton);
+  card.append(heading, label, priorityLabel);
+  if (categoryLabel) card.append(categoryLabel);
+  card.append(saveButton);
   backdrop.append(card);
   document.body.append(backdrop);
   window.requestAnimationFrame(() => {
@@ -917,37 +936,52 @@ function openTaskModal() {
   els.newReminderEnabled.checked = reminderOnly;
   updateNewReminderVisibility();
   els.taskModal.hidden = false;
+  els.taskInput.focus();
   window.requestAnimationFrame(() => {
     els.taskModal.classList.add("open");
-    els.taskInput.focus();
   });
 }
 
+function setVoiceInputActive(active) {
+  els.navAddButton.classList.toggle("listening", active);
+  els.navAddButton.setAttribute("aria-label", active
+    ? "Слухаю..."
+    : "Додати таску. Утримуйте 3 секунди для голосового введення");
+}
+
+function showVoiceInputError(message) {
+  shouldAutoAddVoiceResult = false;
+  setVoiceInputActive(false);
+  if (els.taskModal.hidden) openTaskModal();
+  els.voiceStatus.textContent = message;
+}
+
 function startVoiceInput({ autoAdd = false, category = getCreationCategory() } = {}) {
+  if (els.navAddButton.classList.contains("listening")) return;
   voiceTaskCategory = category;
-  if (window.AndroidSpeech?.start) {
-    shouldAutoAddVoiceResult = autoAdd;
-    els.voiceStatus.textContent = "Слухаю...";
-    window.AndroidSpeech.start();
-    return;
-  }
-  if (!recognition) {
-    els.voiceStatus.textContent = "Голосове введення недоступне в цьому браузері.";
+  if (!window.AndroidSpeech?.start && !recognition) {
+    showVoiceInputError("Голосове введення недоступне в цьому браузері. Введіть таску вручну.");
     return;
   }
 
   shouldAutoAddVoiceResult = autoAdd;
-
+  setVoiceInputActive(true);
+  els.voiceStatus.textContent = "Слухаю...";
   try {
-    recognition.start();
+    if (window.AndroidSpeech?.start) window.AndroidSpeech.start();
+    else recognition.start();
   } catch {
-    els.voiceStatus.textContent = "Мікрофон уже слухає.";
+    showVoiceInputError("Не вдалося запустити мікрофон. Спробуйте ще раз або введіть таску вручну.");
   }
 }
 
 window.onAndroidSpeechResult = async (text) => {
+  setVoiceInputActive(false);
   const transcript = String(text || "").trim();
-  if (!transcript) return;
+  if (!transcript) {
+    shouldAutoAddVoiceResult = false;
+    return;
+  }
   if (shouldAutoAddVoiceResult) {
     shouldAutoAddVoiceResult = false;
     await addTaskFromTitle(transcript, voiceTaskCategory);
@@ -959,28 +993,70 @@ window.onAndroidSpeechResult = async (text) => {
 };
 
 window.onAndroidSpeechError = (message) => {
-  shouldAutoAddVoiceResult = false;
-  els.voiceStatus.textContent = message || "Не вдалося розпізнати голос.";
+  showVoiceInputError(message || "Не вдалося розпізнати голос.");
 };
 
-function addVoiceTask() {
-  startVoiceInput({ autoAdd: true });
+function clearNavAddPress() {
+  if (navAddPress) window.clearTimeout(navAddPress.timer);
+  navAddPress = null;
+  els.navAddButton.classList.remove("holding");
 }
 
-function handleNavMicTap(event) {
-  event.preventDefault();
+function cancelNavAddPress() {
+  if (!navAddPress) return;
+  suppressNavAddClick = true;
+  clearNavAddPress();
+}
 
-  if (navMicTapTimer) {
-    window.clearTimeout(navMicTapTimer);
-    navMicTapTimer = null;
-    openTaskModal();
-    return;
+function setupNavAddButton() {
+  const button = els.navAddButton;
+  button.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || !event.isPrimary || navAddPress) return;
+    suppressNavAddClick = false;
+    if (button.classList.contains("listening")) {
+      suppressNavAddClick = true;
+      return;
+    }
+    const category = getCreationCategory();
+    navAddPress = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      timer: window.setTimeout(() => {
+        suppressNavAddClick = true;
+        button.classList.remove("holding");
+        startVoiceInput({ autoAdd: true, category });
+      }, VOICE_HOLD_DELAY_MS),
+    };
+    button.classList.add("holding");
+    button.setPointerCapture(event.pointerId);
+  });
+  button.addEventListener("pointermove", (event) => {
+    if (navAddPress?.pointerId !== event.pointerId) return;
+    if (Math.hypot(event.clientX - navAddPress.startX, event.clientY - navAddPress.startY) > 12) {
+      cancelNavAddPress();
+    }
+  });
+  button.addEventListener("pointerup", (event) => {
+    if (navAddPress?.pointerId === event.pointerId) clearNavAddPress();
+  });
+  for (const eventName of ["pointercancel", "lostpointercapture"]) {
+    button.addEventListener(eventName, (event) => {
+      if (navAddPress?.pointerId === event.pointerId) cancelNavAddPress();
+    });
   }
-
-  navMicTapTimer = window.setTimeout(() => {
-    navMicTapTimer = null;
-    addVoiceTask();
-  }, DOUBLE_TAP_DELAY_MS);
+  button.addEventListener("contextmenu", (event) => event.preventDefault());
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    // The click emitted on release must not also open the manual form.
+    if (suppressNavAddClick && event.detail !== 0) {
+      suppressNavAddClick = false;
+      return;
+    }
+    if (button.classList.contains("listening")) return;
+    openTaskModal();
+  });
+  window.addEventListener("blur", cancelNavAddPress);
 }
 
 function closeTaskModal() {
@@ -1908,11 +1984,7 @@ window.closeHabitsScreen = () => {
 };
 
 function setupSpeechRecognition() {
-  if (!SpeechRecognition) {
-    els.voiceStatus.textContent = "Голосове введення недоступне в цьому браузері.";
-    els.micButton.disabled = true;
-    return;
-  }
+  if (!SpeechRecognition) return;
 
   recognition = new SpeechRecognition();
   recognition.lang = "uk-UA";
@@ -1920,8 +1992,7 @@ function setupSpeechRecognition() {
   recognition.maxAlternatives = 1;
 
   recognition.addEventListener("start", () => {
-    els.micButton.classList.add("listening");
-    els.navMicButton.classList.add("listening");
+    setVoiceInputActive(true);
     els.voiceStatus.textContent = "Слухаю...";
   });
 
@@ -1941,13 +2012,11 @@ function setupSpeechRecognition() {
   });
 
   recognition.addEventListener("error", () => {
-    shouldAutoAddVoiceResult = false;
-    els.voiceStatus.textContent = "Не вдалося розпізнати голос. Спробуйте ще раз.";
+    showVoiceInputError("Не вдалося розпізнати голос. Спробуйте ще раз.");
   });
 
   recognition.addEventListener("end", () => {
-    els.micButton.classList.remove("listening");
-    els.navMicButton.classList.remove("listening");
+    setVoiceInputActive(false);
     if (els.voiceStatus.textContent === "Слухаю...") {
       els.voiceStatus.textContent = "";
     }
@@ -1992,10 +2061,7 @@ els.mandatoryFilterTabs.forEach((tab) => {
 });
 setupTaskFilterSwipe();
 setupMandatoryFilterSwipe();
-els.navMicButton.addEventListener("contextmenu", (event) => event.preventDefault());
-els.navMicButton.addEventListener("click", handleNavMicTap);
-
-els.micButton.addEventListener("click", () => startVoiceInput());
+setupNavAddButton();
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -2006,7 +2072,8 @@ if ("serviceWorker" in navigator) {
 }
 
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) {
+  if (document.hidden) cancelNavAddPress();
+  else {
     void refreshDailyTasksForNewDay();
     void refreshSharedState();
   }
